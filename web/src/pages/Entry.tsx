@@ -2,11 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { courseVar, useData } from "../store";
 import { link, navigate } from "../router";
-import { clearDraft, emptyDraft, isDirty, readDraft, rowKey, writeDraft, type Draft, type DraftRow } from "../draft";
+import { clearDraft, emptyDraft, isDirty, isRunning, openDraft, readDraft, rowKey, writeDraft, type Draft, type DraftRow } from "../draft";
 import { prefersReducedMotion } from "../motion";
 import {
   addDays,
-  daysBetween,
   elapsedMin,
   formatPct,
   localTime,
@@ -29,13 +28,10 @@ export function Entry({ id, date, startNow }: { id?: number; date?: string; star
   const t = useT();
   const fm = t.fmt.minutes;
   const editing = id !== undefined ? sessions.find((s) => s.id === id) : undefined;
-  const [form, setForm] = useState<Draft>(() => {
-    if (id !== undefined) return emptyDraft();
-    const d = readDraft();
-    // "Start studying" from the overview: stamp the start unless a block is already open.
-    if (startNow && !d?.start) return { ...(d ?? emptyDraft()), date: localToday(), start: localTime(), end: "" };
-    return d ? (date ? { ...d, date } : d) : emptyDraft(date);
-  });
+  const [opened] = useState(() => (id !== undefined ? { form: emptyDraft(), kept: null } : openDraft(readDraft(), { date, startNow })));
+  const [form, setForm] = useState<Draft>(opened.form);
+  // A separate entry while a block runs: never written to or cleared from the draft.
+  const kept = opened.kept;
 
   // Drop ?start=now so a reload does not stamp again.
   useEffect(() => {
@@ -65,8 +61,8 @@ export function Entry({ id, date, startNow }: { id?: number; date?: string; star
   }, [editing?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (id === undefined) writeDraft(form);
-  }, [form, id]);
+    if (id === undefined && !kept) writeDraft(form);
+  }, [form, id, kept]);
 
   useEffect(() => {
     if (adding) newInput.current?.focus();
@@ -165,7 +161,7 @@ export function Entry({ id, date, startNow }: { id?: number; date?: string; star
       if (id !== undefined) await api.updateSession(id, body);
       else {
         await api.createSession(body);
-        clearDraft();
+        if (!kept) clearDraft();
       }
       await reload();
       toast(id !== undefined ? t.entry.toastSaved : t.entry.toastLogged);
@@ -233,7 +229,21 @@ export function Entry({ id, date, startNow }: { id?: number; date?: string; star
         )}
       </div>
 
-      {isNew && <Stamp form={form} onStart={() => setForm((f) => ({ ...f, date: today, start: localTime(), end: "" }))} onEnd={() => set("end", localTime())} />}
+      {isNew &&
+        (kept ? (
+          <section className="stamp is-running reveal">
+            <span className="stamp-pulse" aria-hidden="true" />
+            <span className="stamp-text">
+              <strong>{t.entry.separateTitle}</strong>
+              <span>{t.entry.separateSub(kept.start)}</span>
+            </span>
+            <a className="btn" {...link("/add")}>
+              {t.entry.backToRunning}
+            </a>
+          </section>
+        ) : (
+          <Stamp form={form} onStart={() => setForm((f) => ({ ...f, date: today, start: localTime(), end: "" }))} onEnd={() => set("end", localTime())} />
+        ))}
 
       <section className="step reveal" style={{ ["--i" as string]: 1 }} aria-labelledby="step-time">
         <h2 className="step-title" id="step-time">
@@ -470,8 +480,7 @@ export function Entry({ id, date, startNow }: { id?: number; date?: string; star
 /** One tap when you sit down, one when you stop; the start waits in the draft. */
 function Stamp({ form, onStart, onEnd }: { form: Draft; onStart: () => void; onEnd: () => void }) {
   const t = useT();
-  const today = localToday();
-  const running = TIME_RE.test(form.start) && !form.end && (form.date === today || daysBetween(form.date, today) === 1);
+  const running = isRunning(form);
   const [, tick] = useState(0);
   useEffect(() => {
     if (!running) return;

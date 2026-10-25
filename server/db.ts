@@ -210,6 +210,8 @@ export function createStore(db: DatabaseSync) {
       return courseSummary.all() as { course: string; sessions: number; minutes: number; lastDate: string }[];
     },
     renameCourse(from: string, to: string) {
+      // Merging a course into itself would add each row to itself, then delete it.
+      if (from === to) return 0;
       return transaction(() => {
         mergeCourse.run(from, to);
         const merged = dropMerged.run(from, to).changes;

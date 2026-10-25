@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, setUnauthorizedHandler } from "./api";
-import { DataProvider } from "./store";
+import { DataProvider, useData } from "./store";
 import { link, matchRoute, useLocation, type Route } from "./router";
 import { Login } from "./pages/Login";
 import { Overview } from "./pages/Overview";
@@ -72,7 +72,9 @@ function Shell({ onLogout }: { onLogout: () => void }) {
       </header>
 
       <main className="page" key={route.name === "day" || route.name === "edit" ? path : route.name}>
-        <Page route={route} onLogout={onLogout} />
+        <DataGate>
+          <Page route={route} onLogout={onLogout} />
+        </DataGate>
       </main>
 
       <nav className="bottombar" aria-label={t.app.mainNav}>
@@ -100,12 +102,55 @@ function Shell({ onLogout }: { onLogout: () => void }) {
   );
 }
 
+/** Pages wait for the first good load, so a failed one never looks like an empty account. */
+function DataGate({ children }: { children: ReactNode }) {
+  const t = useT();
+  const { loaded, error, reload } = useData();
+  const [retrying, setRetrying] = useState(false);
+
+  async function retry() {
+    setRetrying(true);
+    await reload();
+    setRetrying(false);
+  }
+
+  const retryButton = (
+    <button className="btn" disabled={retrying} onClick={retry}>
+      {retrying ? t.app.retrying : t.app.retry}
+    </button>
+  );
+
+  if (error && !loaded)
+    return (
+      <div className="empty" role="alert">
+        <h2>{t.app.loadFailed}</h2>
+        <p>{error}</p>
+        {retryButton}
+      </div>
+    );
+  return (
+    <>
+      {error && (
+        <div className="stamp" role="alert" style={{ marginBottom: 24 }}>
+          <span className="stamp-text">
+            <strong>{t.app.staleData}</strong>
+            <span>{error}</span>
+          </span>
+          {retryButton}
+        </div>
+      )}
+      {children}
+    </>
+  );
+}
+
 function Page({ route, onLogout }: { route: Route; onLogout: () => void }) {
   switch (route.name) {
     case "overview":
       return <Overview />;
     case "add":
-      return <Entry date={route.date} startNow={route.startNow} />;
+      // A new ?date= reopens the form, e.g. from a separate entry back to a running block.
+      return <Entry key={route.date ?? ""} date={route.date} startNow={route.startNow} />;
     case "edit":
       return <Entry id={route.id} />;
     case "records":

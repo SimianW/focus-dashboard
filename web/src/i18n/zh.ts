@@ -73,6 +73,10 @@ export const zh: Messages = {
     settings: "设置",
     logBlock: "记一次",
     other: "其他",
+    loadFailed: "数据没能加载",
+    staleData: "数据没能刷新，页面上的内容可能不是最新的。",
+    retry: "重试",
+    retrying: "正在重试…",
   },
 
   common: {
@@ -210,6 +214,9 @@ export const zh: Messages = {
     delete: "删除这条记录",
     stampRunning: (start) => `${start} 开始。学完点“结束”，再记下学了哪些课。`,
     stampIdle: "现在开始学习？",
+    separateTitle: "另记一段",
+    separateSub: (start) => `${start} 开始的那段仍在计时，不受影响。`,
+    backToRunning: "回到计时",
     stampIdleSub: "点一下记下开始时间，学完回来点结束。可以关掉页面。",
     now: "现在",
     setNow: (label) => `${label}时间设为现在`,
@@ -330,6 +337,7 @@ export const zh: Messages = {
     imported: (n) => `已导入 ${n} 条记录。`,
     importedToast: (n) => `已导入 ${n} 条记录`,
     importFailed: (msg) => `没有导入任何记录：${msg}`,
+    importStale: "数据还没有加载成功，无法检查重复记录。请先重新加载再导入。",
     account: "账户",
     logout: "退出登录",
   },

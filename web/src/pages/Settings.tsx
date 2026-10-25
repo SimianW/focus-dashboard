@@ -15,7 +15,7 @@ function rowKey(r: ImportRow | Session): string {
 }
 
 export function SettingsPage({ onLogout }: { onLogout: () => void }) {
-  const { settings, sessions, courses, courseSlot, setSettings, reload, toast } = useData();
+  const { settings, sessions, courses, courseSlot, loaded, error: loadError, setSettings, reload, toast } = useData();
   const t = useT();
   const [goal, setGoal] = useState(String(settings.dailyGoalMin));
   const [target, setTarget] = useState(String(Math.round(settings.targetRatio * 100)));
@@ -68,6 +68,8 @@ export function SettingsPage({ onLogout }: { onLogout: () => void }) {
     setImportMsg(null);
     setPending(null);
     if (!file) return;
+    // Duplicates are found against the loaded sessions, so they must be current.
+    if (!loaded || loadError) return setImportMsg({ ok: false, text: t.settings.importStale });
     try {
       const json = JSON.parse(await file.text());
       const raw: unknown = Array.isArray(json) ? json : json?.sessions;
@@ -87,6 +89,7 @@ export function SettingsPage({ onLogout }: { onLogout: () => void }) {
 
   async function runImport() {
     if (!pending) return;
+    if (!loaded || loadError) return setImportMsg({ ok: false, text: t.settings.importStale });
     const rows = skipDupes ? pending.rows.filter((r) => !existing.has(rowKey(r))) : pending.rows;
     setBusy(true);
     try {
