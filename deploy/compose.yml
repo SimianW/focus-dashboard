@@ -1,0 +1,19 @@
+# Production stack. Run from the deployment directory, which holds .env
+# (APP_PASSWORD=...). The SQLite database lives in the focus-data volume.
+name: focus-dashboard
+
+services:
+  app:
+    image: ${IMAGE:-focus-dashboard}:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      COOKIE_SECURE: "true"
+    volumes:
+      - focus-data:/data
+    # Only the host's reverse proxy (1Panel OpenResty) reaches this port.
+    ports:
+      - "127.0.0.1:11120:3000"
+
+volumes:
+  focus-data:
