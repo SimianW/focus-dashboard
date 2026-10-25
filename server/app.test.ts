@@ -143,6 +143,23 @@ test("duplicate courses in a session merge, and renaming merges too", async () =
   assert.deepEqual(courses, [{ course: "数学", sessions: 2, minutes: 110, lastDate: "2026-10-20" }]);
 });
 
+test("renaming a course to its own name changes nothing", async () => {
+  const { call, login } = setup();
+  await login();
+  await call("POST", "/api/sessions", session);
+  await call("POST", "/api/sessions", { ...session, date: "2026-10-22", courses: [{ course: "数学", minutes: 30 }] });
+  const sessionsBefore = (await call("GET", "/api/sessions")).json;
+  const coursesBefore = (await call("GET", "/api/courses")).json;
+
+  for (const [from, to] of [["数学", "数学"], ["数学", " 数学 "], [" 英语", "英语\t"]]) {
+    const res = await call("POST", "/api/courses/rename", { from, to });
+    assert.equal(res.status, 200);
+    assert.equal(res.json.updated, 0);
+  }
+  assert.deepEqual((await call("GET", "/api/sessions")).json, sessionsBefore);
+  assert.deepEqual((await call("GET", "/api/courses")).json, coursesBefore);
+});
+
 test("settings have defaults and can be saved", async () => {
   const { call, login } = setup();
   await login();

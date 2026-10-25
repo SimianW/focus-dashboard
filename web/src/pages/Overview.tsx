@@ -3,7 +3,7 @@ import { courseVar, useData } from "../store";
 import { link, navigate } from "../router";
 import { courseColor, useChartTheme } from "../theme";
 import { useWidth } from "../useWidth";
-import { readDraft } from "../draft";
+import { isRunning, readDraft } from "../draft";
 import { Chart } from "../components/LazyChart";
 import { Empty } from "../components/Empty";
 import { Timeline } from "../components/Timeline";
@@ -28,7 +28,6 @@ import {
   rollingRatio,
   sessionFocus,
   localTime,
-  TIME_RE,
   weekStart,
   weightedRatio,
   type Session,
@@ -250,8 +249,7 @@ export function Overview() {
 
 function runningDraft() {
   const d = readDraft();
-  const today = localToday();
-  return d && TIME_RE.test(d.start) && !d.end && (d.date === today || daysBetween(d.date, today) === 1) ? d : null;
+  return d && isRunning(d) ? d : null;
 }
 
 const hasRunning = () => runningDraft() !== null;

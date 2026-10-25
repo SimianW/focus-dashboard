@@ -12,7 +12,9 @@ type Data = {
   courses: CourseSummary[]; // for suggestions, most-used first
   /** 1..COURSE_SLOTS, or 0 for a course without its own colour. */
   courseSlot: (course: string) => number;
+  /** True once a load has succeeded; a failed first load leaves it false. */
   loaded: boolean;
+  /** Why the latest load failed; null once one succeeds. */
   error: string | null;
   reload: () => Promise<void>;
   setSettings: (s: Settings) => void;
@@ -40,10 +42,9 @@ export function DataProvider({ children, onToast }: { children: ReactNode; onToa
       if (isLanguage(st.language)) setLanguage(st.language);
       setCourses(c);
       setError(null);
+      setLoaded(true);
     } catch (e) {
       setError((e as Error).message);
-    } finally {
-      setLoaded(true);
     }
   }, []);
 

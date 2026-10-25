@@ -84,6 +84,10 @@ export const en = {
     settings: "Settings",
     logBlock: "Log block",
     other: "Other",
+    loadFailed: "Couldn’t load your data",
+    staleData: "Couldn’t refresh your data, so this page may be out of date.",
+    retry: "Try again",
+    retrying: "Trying again…",
   },
 
   common: {
@@ -232,6 +236,9 @@ export const en = {
     delete: "Delete this block",
     stampRunning: (start: string) => `Started at ${start}. Tap “End” when you’re done, then log the courses.`,
     stampIdle: "Start studying now?",
+    separateTitle: "Logging a separate block",
+    separateSub: (start: string) => `Your block running since ${start} keeps running and isn’t changed.`,
+    backToRunning: "Back to it",
     stampIdleSub: "Tap once to note the start time and again at the end. You can close the page in between.",
     now: "Now",
     setNow: (label: string) => `Set ${label.toLowerCase()} time to now`,
@@ -356,6 +363,7 @@ export const en = {
     imported: (n: number) => `Imported ${plural(n, "record")}.`,
     importedToast: (n: number) => `Imported ${plural(n, "record")}`,
     importFailed: (msg: string) => `Nothing was imported: ${msg}`,
+    importStale: "Your data hasn’t loaded, so duplicates can’t be checked. Load it again before importing.",
     account: "Account",
     logout: "Sign out",
   },
