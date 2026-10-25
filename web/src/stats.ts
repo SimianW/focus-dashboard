@@ -19,7 +19,9 @@ export type Session = {
 
 export type SessionInput = Omit<Session, "id">;
 
-export type Settings = { dailyGoalMin: number; targetRatio: number };
+export type Language = "en" | "zh";
+
+export type Settings = { dailyGoalMin: number; targetRatio: number; language: Language };
 
 // ---------- dates ----------
 
@@ -84,9 +86,6 @@ export function spanMin(start: string, end: string): number {
 
 /** Minutes since `start` for a block still running (0 right after starting). */
 export const elapsedMin = (start: string, now: string) => (((toMinutes(now) - toMinutes(start)) % 1440) + 1440) % 1440;
-
-/** "已经 1 小时 5 分" or "刚开始" for a running block. */
-export const formatElapsed = (min: number) => (min < 1 ? "刚开始" : `已经 ${formatMinutes(min)}`);
 
 export const sessionSpan = (s: Pick<Session, "start" | "end">) => spanMin(s.start, s.end);
 
@@ -445,34 +444,7 @@ export function normalizeCourses(list: readonly { course: string; minutes: numbe
 }
 
 // ---------- formatting ----------
-
-export function formatMinutes(min: number): string {
-  const m = Math.round(min);
-  const h = Math.floor(m / 60);
-  const r = m % 60;
-  if (h === 0) return `${r} 分钟`;
-  return r ? `${h} 小时 ${r} 分` : `${h} 小时`;
-}
-
-/** Compact duration for tight spots: "2h05", "45m". */
-export function formatShort(min: number): string {
-  const m = Math.round(min);
-  const h = Math.floor(m / 60);
-  return h ? `${h}h${String(m % 60).padStart(2, "0")}` : `${m}m`;
-}
+// Language-dependent formatting (durations, dates, weekday names) lives in
+// the dictionaries under src/i18n; a percentage reads the same in both.
 
 export const formatPct = (r: number | null, digits = 0) => (r === null ? "—" : `${(r * 100).toFixed(digits)}%`);
-
-export function formatPp(delta: number | null): string {
-  if (delta === null) return "—";
-  const pp = delta * 100;
-  const sign = pp > 0.05 ? "+" : pp < -0.05 ? "−" : "±";
-  return `${sign}${Math.abs(pp).toFixed(1)} 个百分点`;
-}
-
-export const WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
-
-export function formatDateCn(date: string, withWeekday = true): string {
-  const [, m, d] = date.split("-").map(Number);
-  return `${m} 月 ${d} 日${withWeekday ? ` ${WEEKDAYS[weekday(date)]}` : ""}`;
-}

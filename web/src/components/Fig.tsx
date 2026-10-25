@@ -1,6 +1,6 @@
 import { useCountUp } from "../motion";
 
-/** A figure such as "3 小时 37 分" with the digits large and the units set small. */
+/** A figure such as "3 hr 37 min" with the digits large and the units set small. */
 export function Fig({ text }: { text: string }) {
   if (!/\d/.test(text)) return <span className="fig">{text}</span>;
   const parts = text

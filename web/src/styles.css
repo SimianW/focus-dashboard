@@ -434,6 +434,16 @@ p {
   font-optical-sizing: auto;
 }
 
+/* Newsreader is drawn for Latin: let English headings sit a touch tighter
+   and lighter than the CJK fallback needs. */
+:lang(en) .page-title {
+  letter-spacing: -0.018em;
+}
+
+:lang(en) .panel-title {
+  letter-spacing: -0.008em;
+}
+
 .page-sub {
   margin-top: 6px;
   color: var(--muted);
@@ -489,7 +499,7 @@ p {
   font-size: 14px;
 }
 
-/* A figure such as "3 小时 37 分": serif digits, small sans units. */
+/* A figure such as "3 hr 37 min": serif digits, small sans units. */
 .fig {
   font-family: var(--serif);
   font-weight: 400;
@@ -1772,6 +1782,27 @@ button.tl-block:hover {
   align-self: flex-start;
 }
 
+/* Language sits beside its explanation; each option is written in its own
+   language, so the switch reads the same whichever one is active. */
+.language-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  flex-wrap: wrap;
+}
+
+.language-row .muted {
+  margin-top: 2px;
+  font-size: 13.5px;
+}
+
+.lang-switch .seg {
+  min-width: 84px;
+  min-height: 34px;
+  font-size: 14px;
+}
+
 .file-btn {
   position: relative;
   overflow: hidden;
@@ -1816,9 +1847,16 @@ button.tl-block:hover {
   flex: 1;
   min-width: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 0 10px;
   font-weight: 600;
+}
+
+/* Longer counts ("114 blocks, 99 hr 30 min") drop under the name instead of
+   running into the button. */
+.rename-row > .btn {
+  flex: none;
 }
 
 .rename-row .rr-meta {

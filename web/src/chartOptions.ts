@@ -3,7 +3,8 @@
 // both modes.
 import type { EChartsCoreOption } from "echarts/core";
 import type { ChartTheme } from "./theme";
-import { formatDateCn, formatMinutes, formatPct, type Day, type Trend } from "./stats";
+import type { Messages } from "./i18n";
+import { formatPct, type Day, type Trend } from "./stats";
 
 type Opt = EChartsCoreOption;
 
@@ -73,8 +74,6 @@ const LINE_KEY = "path://M0,4.25 L16,4.25 L16,5.75 L0,5.75 Z";
 const pctAxis = (t: ChartTheme, min = 0) =>
   valueAxis(t, { min, max: 1, interval: 0.2, axisLabel: { color: t.muted, fontSize: 11, formatter: (v: number) => `${Math.round(v * 100)}%` } });
 
-const shortDate = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
-
 const hoursLabel = (min: number) => (min % 60 === 0 ? `${min / 60}h` : `${(min / 60).toFixed(1)}h`);
 
 /** Lower bound for a ratio axis: honest zero unless data sits well above it. */
@@ -88,6 +87,7 @@ function ratioFloor(values: (number | null)[]) {
 
 export function trendOption(
   t: ChartTheme,
+  m: Messages,
   days: Day[],
   rolling: (number | null)[],
   trend: Trend | null,
@@ -106,13 +106,13 @@ export function trendOption(
       itemWidth: 16,
       itemHeight: 10,
       data: [
-        { name: "每日专注率", icon: "circle", itemStyle: { color: t.focusSoft } },
-        { name: "近 7 天滚动", icon: LINE_KEY, itemStyle: { color: t.focus } },
-        ...(trend ? [{ name: "趋势线", icon: LINE_KEY, itemStyle: { color: t.trend } }] : []),
+        { name: m.charts.dailyRatio, icon: "circle", itemStyle: { color: t.focusSoft } },
+        { name: m.charts.rolling, icon: LINE_KEY, itemStyle: { color: t.focus } },
+        ...(trend ? [{ name: m.charts.trend, icon: LINE_KEY, itemStyle: { color: t.trend } }] : []),
       ],
     }),
     grid: { left: 40, right: 16, top: 40, bottom: 28 },
-    xAxis: categoryAxis(t, dates, { axisLabel: { color: t.muted, fontSize: 11, hideOverlap: true, formatter: shortDate } }),
+    xAxis: categoryAxis(t, dates, { axisLabel: { color: t.muted, fontSize: 11, hideOverlap: true, formatter: m.charts.shortDate } }),
     yAxis: pctAxis(t, min),
     tooltip: {
       ...(base(t).tooltip as object),
@@ -122,16 +122,16 @@ export function trendOption(
         const i = ps[0].dataIndex;
         const d = days[i];
         return (
-          head(formatDateCn(d.date)) +
-          (d.ratio === null ? row(t.focusSoft, "未记录", "当天") : row(t.focusSoft, formatPct(d.ratio), `当天，${d.n} 次`)) +
-          row(t.focus, formatPct(rolling[i]), "近 7 天") +
-          (trendLine[i] !== null ? row(t.trend, formatPct(trendLine[i]), "趋势") : "")
+          head(m.fmt.date(d.date)) +
+          (d.ratio === null ? row(t.focusSoft, m.charts.notLogged, m.charts.thatDay) : row(t.focusSoft, formatPct(d.ratio), m.charts.thatDayN(d.n))) +
+          row(t.focus, formatPct(rolling[i]), m.charts.last7) +
+          (trendLine[i] !== null ? row(t.trend, formatPct(trendLine[i]), m.charts.trendTip) : "")
         );
       },
     },
     series: [
       {
-        name: "每日专注率",
+        name: m.charts.dailyRatio,
         type: "scatter",
         data: days.map((d) => d.ratio),
         symbolSize: 10,
@@ -141,12 +141,12 @@ export function trendOption(
           silent: true,
           symbol: "none",
           lineStyle: { color: t.target, width: 1, type: [4, 4] },
-          label: { formatter: `目标 ${formatPct(target)}`, color: t.ink2, fontSize: 11, position: "insideEndTop" },
+          label: { formatter: m.charts.target(formatPct(target)), color: t.ink2, fontSize: 11, position: "insideEndTop" },
           data: [{ yAxis: target }],
         },
       },
       {
-        name: "近 7 天滚动",
+        name: m.charts.rolling,
         type: "line",
         data: rolling,
         showSymbol: false,
@@ -158,7 +158,7 @@ export function trendOption(
       ...(trend
         ? [
             {
-              name: "趋势线",
+              name: m.charts.trend,
               type: "line",
               data: trendLine,
               showSymbol: false,
@@ -177,6 +177,7 @@ export type CourseSeries = { name: string; color: string; data: number[] };
 /** Bars per day or week: course minutes stacked, the unfocused rest on top when given. */
 export function courseStackOption(
   t: ChartTheme,
+  m: Messages,
   labels: string[],
   series: CourseSeries[],
   opts: { rest?: number[]; goalMin?: number; tooltipHead: (i: number) => string; empty?: (i: number) => boolean; formatLabel?: (l: string) => string },
@@ -184,7 +185,7 @@ export function courseStackOption(
   const totals = labels.map((_, i) => series.reduce((a, c) => a + c.data[i], 0) + (opts.rest?.[i] ?? 0));
   const maxMin = Math.max(opts.goalMin ?? 0, ...totals);
   const step = [60, 120, 180, 300, 600, 1200].find((m) => maxMin / m <= 5) ?? 2400;
-  const all = [...series, ...(opts.rest ? [{ name: "分心或休息", color: t.unfocused, data: opts.rest }] : [])];
+  const all = [...series, ...(opts.rest ? [{ name: m.common.rest, color: t.unfocused, data: opts.rest }] : [])];
   // The topmost non-zero segment of each bar gets the rounded end.
   const topOf = labels.map((_, i) => {
     for (let k = all.length - 1; k >= 0; k--) if (all[k].data[i] > 0) return k;
@@ -202,12 +203,12 @@ export function courseStackOption(
       axisPointer: { type: "shadow", shadowStyle: { color: t.grid, opacity: 0.7 } },
       formatter: (ps: { dataIndex: number }[]) => {
         const i = ps[0].dataIndex;
-        if (opts.empty?.(i)) return head(opts.tooltipHead(i)) + `<div>没有记录</div>`;
+        if (opts.empty?.(i)) return head(opts.tooltipHead(i)) + `<div>${m.charts.nothing}</div>`;
         const focus = series.reduce((a, c) => a + c.data[i], 0);
         return (
           head(opts.tooltipHead(i)) +
-          all.filter((c) => c.data[i] > 0).map((c) => row(c.color, formatMinutes(c.data[i]), c.name)).reverse().join("") +
-          `<div style="opacity:.7;margin-top:4px">专注 ${formatMinutes(focus)}${opts.rest ? `，专注率 ${formatPct(totals[i] ? focus / totals[i] : null)}` : ""}</div>`
+          all.filter((c) => c.data[i] > 0).map((c) => row(c.color, m.fmt.minutes(c.data[i]), c.name)).reverse().join("") +
+          `<div style="opacity:.7;margin-top:4px">${esc(m.charts.stackFoot(m.fmt.minutes(focus), opts.rest ? formatPct(totals[i] ? focus / totals[i] : null) : null))}</div>`
         );
       },
     },
@@ -225,7 +226,7 @@ export function courseStackOption(
               silent: true,
               symbol: "none",
               lineStyle: { color: t.target, width: 1, type: [4, 4] },
-              label: { formatter: `目标 ${hoursLabel(opts.goalMin)}`, color: t.ink2, fontSize: 11, position: "insideEndTop" },
+              label: { formatter: m.charts.target(hoursLabel(opts.goalMin)), color: t.ink2, fontSize: 11, position: "insideEndTop" },
               data: [{ yAxis: opts.goalMin }],
             },
           }
@@ -234,13 +235,13 @@ export function courseStackOption(
   };
 }
 
-export function heatmapOption(t: ChartTheme, days: Day[], goalMin: number, cellSize: number): Opt {
+export function heatmapOption(t: ChartTheme, m: Messages, days: Day[], goalMin: number, cellSize: number): Opt {
   const g = Math.max(goalMin, 60);
   const pieces = [
-    { min: 0, max: 0, label: "未学习", color: t.heat[0] },
+    { min: 0, max: 0, label: m.charts.noStudy, color: t.heat[0] },
     { gt: 0, lt: g / 2, label: `< ${hoursLabel(Math.round(g / 2))}`, color: t.heat[1] },
     { gte: g / 2, lt: g, label: `< ${hoursLabel(g)}`, color: t.heat[2] },
-    { gte: g, lt: g * 1.5, label: "达标", color: t.heat[3] },
+    { gte: g, lt: g * 1.5, label: m.charts.goalMet, color: t.heat[3] },
     { gte: g * 1.5, label: `≥ ${hoursLabel(Math.round(g * 1.5))}`, color: t.heat[4] },
   ];
   return {
@@ -249,8 +250,8 @@ export function heatmapOption(t: ChartTheme, days: Day[], goalMin: number, cellS
       ...(base(t).tooltip as object),
       formatter: (p: { value: [string, number] }) => {
         const d = days.find((x) => x.date === p.value[0]);
-        if (!d || !d.n) return head(formatDateCn(p.value[0])) + "<div>没有记录</div>";
-        return head(formatDateCn(d.date)) + row(t.focus, formatMinutes(d.focus), `专注，${d.n} 次，专注率 ${formatPct(d.ratio)}`);
+        if (!d || !d.n) return head(m.fmt.date(p.value[0])) + `<div>${m.charts.nothing}</div>`;
+        return head(m.fmt.date(d.date)) + row(t.focus, m.fmt.minutes(d.focus), m.charts.heatTip(d.n, formatPct(d.ratio)));
       },
     },
     visualMap: {
@@ -261,7 +262,8 @@ export function heatmapOption(t: ChartTheme, days: Day[], goalMin: number, cellS
       bottom: 0,
       itemWidth: 12,
       itemHeight: 12,
-      itemGap: 12,
+      // Narrow phones: the five pieces must still fit on one line.
+      itemGap: cellSize < 18 ? 8 : 12,
       itemSymbol: "roundRect",
       textStyle: { color: t.ink2, fontSize: 11 },
       selectedMode: false,
@@ -277,8 +279,8 @@ export function heatmapOption(t: ChartTheme, days: Day[], goalMin: number, cellS
       orient: "horizontal",
       splitLine: { show: false },
       itemStyle: { color: "transparent", borderColor: t.surface, borderWidth: 3 },
-      dayLabel: { firstDay: 1, nameMap: "ZH", color: t.muted, fontSize: 10, margin: 6 },
-      monthLabel: { nameMap: "ZH", color: t.muted, fontSize: 11, margin: 6 },
+      dayLabel: { firstDay: 1, nameMap: m.fmt.calendar, color: t.muted, fontSize: 10, margin: 6 },
+      monthLabel: { nameMap: m.fmt.calendar, color: t.muted, fontSize: 11, margin: 6 },
       yearLabel: { show: false },
     },
     series: [
@@ -298,7 +300,7 @@ export function heatmapOption(t: ChartTheme, days: Day[], goalMin: number, cellS
 export type BarDatum = { label: string; ratio: number | null; n: number; weak: boolean };
 
 /** Ratio per bucket, with the session count written above each bar. */
-export function ratioBarsOption(t: ChartTheme, data: BarDatum[], unit = "次"): Opt {
+export function ratioBarsOption(t: ChartTheme, m: Messages, data: BarDatum[], unit: "blocks" | "days" = "blocks"): Opt {
   return {
     ...base(t),
     grid: { left: 40, right: 8, top: 24, bottom: 28 },
@@ -309,7 +311,7 @@ export function ratioBarsOption(t: ChartTheme, data: BarDatum[], unit = "次"): 
       trigger: "item",
       formatter: (p: { dataIndex: number }) => {
         const d = data[p.dataIndex];
-        return head(d.label) + row(t.focus, formatPct(d.ratio), `专注率，${d.n} ${unit}${d.weak ? "（样本少）" : ""}`);
+        return head(d.label) + row(t.focus, formatPct(d.ratio), m.charts.barTip(d.n, unit, d.weak));
       },
     },
     series: [
@@ -330,6 +332,7 @@ export function ratioBarsOption(t: ChartTheme, data: BarDatum[], unit = "次"): 
 
 export function scatterOption(
   t: ChartTheme,
+  m: Messages,
   points: { x: number; y: number; label: string }[],
   xName: string,
   xFormat: (v: number) => string,
@@ -353,7 +356,7 @@ export function scatterOption(
       trigger: "item",
       formatter: (p: { dataIndex: number }) => {
         const d = points[p.dataIndex];
-        return head(d.label) + row(t.focus, formatPct(d.y), `专注率，${xName} ${xFormat(d.x)}`);
+        return head(d.label) + row(t.focus, formatPct(d.y), m.charts.scatterTip(xName, xFormat(d.x)));
       },
     },
     series: [
@@ -368,7 +371,7 @@ export function scatterOption(
   };
 }
 
-export function histogramOption(t: ChartTheme, bins: number[], width: number): Opt {
+export function histogramOption(t: ChartTheme, m: Messages, bins: number[], width: number): Opt {
   const labels = bins.map((_, i) => `${Math.round(i * width * 100)}–${Math.round((i + 1) * width * 100)}%`);
   return {
     ...base(t),
@@ -380,7 +383,7 @@ export function histogramOption(t: ChartTheme, bins: number[], width: number): O
     tooltip: {
       ...(base(t).tooltip as object),
       trigger: "item",
-      formatter: (p: { dataIndex: number; value: number }) => head(`专注率 ${labels[p.dataIndex]}`) + row(t.focus, `${p.value}`, "次学习"),
+      formatter: (p: { dataIndex: number; value: number }) => head(m.charts.histHead(labels[p.dataIndex])) + row(t.focus, `${p.value}`, m.charts.histCount(p.value)),
     },
     series: [
       {
@@ -394,7 +397,7 @@ export function histogramOption(t: ChartTheme, bins: number[], width: number): O
 }
 
 /** Focus hours (top) and ratio (bottom) as two aligned panels, never two y-scales on one plot. */
-export function periodOption(t: ChartTheme, rows: { label: string; focus: number; ratio: number | null; days: number }[]): Opt {
+export function periodOption(t: ChartTheme, m: Messages, rows: { label: string; focus: number; ratio: number | null; days: number }[]): Opt {
   const labels = rows.map((r) => r.label);
   const ratios = rows.map((r) => r.ratio);
   return {
@@ -408,8 +411,8 @@ export function periodOption(t: ChartTheme, rows: { label: string; focus: number
       categoryAxis(t, labels, { gridIndex: 1 }),
     ],
     yAxis: [
-      valueAxis(t, { gridIndex: 0, name: "专注小时", nameTextStyle: { color: t.muted, fontSize: 11, align: "left" }, axisLabel: { color: t.muted, fontSize: 11, formatter: (v: number) => `${v}` } }),
-      { ...pctAxis(t, ratioFloor(ratios)), gridIndex: 1, name: "专注率", nameTextStyle: { color: t.muted, fontSize: 11, align: "left" } },
+      valueAxis(t, { gridIndex: 0, name: m.charts.focusHours, nameTextStyle: { color: t.muted, fontSize: 11, align: "left" }, axisLabel: { color: t.muted, fontSize: 11, formatter: (v: number) => `${v}` } }),
+      { ...pctAxis(t, ratioFloor(ratios)), gridIndex: 1, name: m.common.focusRate, nameTextStyle: { color: t.muted, fontSize: 11, align: "left" } },
     ],
     axisPointer: { link: [{ xAxisIndex: "all" }], lineStyle: { color: t.axis } },
     tooltip: {
@@ -418,7 +421,7 @@ export function periodOption(t: ChartTheme, rows: { label: string; focus: number
       axisPointer: { type: "line" },
       formatter: (ps: { dataIndex: number }[]) => {
         const r = rows[ps[0].dataIndex];
-        return head(r.label) + row(t.focus, formatMinutes(r.focus), `专注，${r.days} 天有记录`) + row(t.focus, formatPct(r.ratio), "专注率");
+        return head(r.label) + row(t.focus, m.fmt.minutes(r.focus), m.charts.periodTip(r.days)) + row(t.focus, formatPct(r.ratio), m.common.focusRate.toLowerCase());
       },
     },
     series: [
@@ -447,6 +450,7 @@ export function periodOption(t: ChartTheme, rows: { label: string; focus: number
 /** Per-course focus ratio as horizontal bars, labelled with the ratio and the blocks behind it. */
 export function courseRatioOption(
   t: ChartTheme,
+  m: Messages,
   rows: { name: string; color: string; ratio: number | null; blocks: number; minutes: number }[],
   target: number,
 ): Opt {
@@ -462,7 +466,7 @@ export function courseRatioOption(
       trigger: "item",
       formatter: (p: { dataIndex: number }) => {
         const r = rows[p.dataIndex];
-        return head(r.name) + row(r.color, formatPct(r.ratio), `专注率，${r.blocks} 段，${formatMinutes(r.minutes)}`);
+        return head(r.name) + row(r.color, formatPct(r.ratio), m.charts.courseTip(r.blocks, m.fmt.minutes(r.minutes)));
       },
     },
     series: [
@@ -479,7 +483,7 @@ export function courseRatioOption(
           distance: 8,
           color: t.ink2,
           fontSize: 12,
-          formatter: (p: { dataIndex: number }) => `${formatPct(rows[p.dataIndex].ratio)}  {n|${rows[p.dataIndex].blocks} 段}`,
+          formatter: (p: { dataIndex: number }) => `${formatPct(rows[p.dataIndex].ratio)}  {n|${m.charts.blocks(rows[p.dataIndex].blocks)}}`,
           rich: { n: { color: t.muted, fontSize: 11 } },
           // Sit above the target line instead of being crossed by it.
           backgroundColor: t.surface,
@@ -492,7 +496,7 @@ export function courseRatioOption(
                 symbol: "none",
                 z: 1,
                 lineStyle: { color: t.target, width: 1, type: [4, 4] },
-                label: { formatter: `目标 ${formatPct(target)}`, color: t.muted, fontSize: 11, position: "start", distance: 6 },
+                label: { formatter: m.charts.target(formatPct(target)), color: t.muted, fontSize: 11, position: "start", distance: 6 },
                 data: [{ xAxis: target }],
               }
             : undefined,

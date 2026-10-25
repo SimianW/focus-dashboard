@@ -1,8 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, type CourseSummary } from "./api";
 import { courseOrder, type Session, type Settings } from "./stats";
+import { getLanguage, isLanguage, setLanguage } from "./i18n";
 
-/** Colour slots for courses; past these a course is drawn as "其他". */
+/** Colour slots for courses; past these a course is drawn as "Other". */
 export const COURSE_SLOTS = 6;
 
 type Data = {
@@ -20,13 +21,12 @@ type Data = {
 
 const Ctx = createContext<Data | null>(null);
 
-const DEFAULT_SETTINGS: Settings = { dailyGoalMin: 240, targetRatio: 0.75 };
 
 // One person's data fits comfortably in memory: load everything once and
 // reload after each write so every screen agrees.
 export function DataProvider({ children, onToast }: { children: ReactNode; onToast: (m: string) => void }) {
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState<Settings>(() => ({ dailyGoalMin: 240, targetRatio: 0.75, language: getLanguage() }));
   const [courses, setCourses] = useState<CourseSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +36,8 @@ export function DataProvider({ children, onToast }: { children: ReactNode; onToa
       const [s, st, c] = await Promise.all([api.sessions(), api.settings(), api.courses()]);
       setSessions(s);
       setSettings(st);
+      // The account setting wins over this device's cached language.
+      if (isLanguage(st.language)) setLanguage(st.language);
       setCourses(c);
       setError(null);
     } catch (e) {

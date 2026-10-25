@@ -19,12 +19,14 @@ import {
 } from "../insights";
 import { addDays, courseMinutesBy, dateRange, formatPct, localToday, meanSessionRatio, weekStart, weightedRatio } from "../stats";
 import { useData } from "../store";
+import { useT } from "../i18n";
 
 type Range = "30" | "90" | "all";
 
 export function Patterns() {
   const { sessions, loaded, courseSlot, settings } = useData();
   const t = useChartTheme();
+  const m = useT();
   const [range, setRange] = useState<Range>("all");
   const [period, setPeriod] = useState<"week" | "month">("week");
   const today = localToday();
@@ -37,37 +39,38 @@ export function Patterns() {
 
   const a = useMemo(
     () => ({
-      hour: byHour(list),
-      weekday: byWeekday(list),
-      length: lengthVsRatio(list),
-      energy: energyVsRatio(list),
-      intr: interruptionsVsRatio(list),
-      dist: ratioDistribution(list),
-      period: periods(list, period),
-      course: byCourse(list),
+      hour: byHour(list, m),
+      weekday: byWeekday(list, m),
+      length: lengthVsRatio(list, m),
+      energy: energyVsRatio(list, m),
+      intr: interruptionsVsRatio(list, m),
+      dist: ratioDistribution(list, m),
+      period: periods(list, period, m),
+      course: byCourse(list, m),
     }),
-    [list, period],
+    [list, period, m],
   );
 
   const opts = useMemo(
     () => ({
-      hour: a.hour && ratioBarsOption(t, a.hour.bars),
-      weekday: a.weekday && ratioBarsOption(t, a.weekday.bars, "天"),
-      length: a.length && scatterOption(t, a.length.points, "时长", (v) => (v >= 60 ? `${(v / 60).toFixed(v % 60 ? 1 : 0)}h` : `${v}m`)),
-      energy: a.energy && ratioBarsOption(t, a.energy.bars),
-      intr: a.intr && ratioBarsOption(t, a.intr.bars),
-      dist: a.dist && histogramOption(t, a.dist.bins, HIST_WIDTH),
-      period: a.period && periodOption(t, a.period.rows),
+      hour: a.hour && ratioBarsOption(t, m, a.hour.bars),
+      weekday: a.weekday && ratioBarsOption(t, m, a.weekday.bars, "days"),
+      length: a.length && scatterOption(t, m, a.length.points, m.patterns.lengthAxis, (v) => (v >= 60 ? `${(v / 60).toFixed(v % 60 ? 1 : 0)}h` : `${v}m`)),
+      energy: a.energy && ratioBarsOption(t, m, a.energy.bars),
+      intr: a.intr && ratioBarsOption(t, m, a.intr.bars),
+      dist: a.dist && histogramOption(t, m, a.dist.bins, HIST_WIDTH),
+      period: a.period && periodOption(t, m, a.period.rows),
       courseRatio:
         a.course &&
         courseRatioOption(
           t,
+          m,
           a.course.rows.map((c) => ({ name: c.course, color: courseColor(t, courseSlot(c.course)), ratio: c.ratio, blocks: c.blocks, minutes: c.minutes })),
           settings.targetRatio,
         ),
       courseWeeks: a.course && list.length ? courseWeeksOption() : null,
     }),
-    [a, t, courseSlot, settings.targetRatio, list], // eslint-disable-line react-hooks/exhaustive-deps
+    [a, t, m, courseSlot, settings.targetRatio, list], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // Course minutes per calendar week, every week from the first to the last.
@@ -79,17 +82,16 @@ export function Patterns() {
     const own = all.filter((c) => courseSlot(c) > 0);
     const rest = all.filter((c) => courseSlot(c) === 0);
     const series = own.map((c) => ({ name: c, color: courseColor(t, courseSlot(c)), data: byCourse.get(c)! }));
-    if (rest.length) series.push({ name: "其他", color: t.courseOther, data: weeks.map((_, i) => rest.reduce((x, c) => x + byCourse.get(c)![i], 0)) });
-    const label = (w: string) => `${Number(w.slice(5, 7))}/${Number(w.slice(8, 10))}`;
-    return courseStackOption(t, weeks.map(label), series, { tooltipHead: (i) => `${label(weeks[i])} 那一周` });
+    if (rest.length) series.push({ name: m.app.other, color: t.courseOther, data: weeks.map((_, i) => rest.reduce((x, c) => x + byCourse.get(c)![i], 0)) });
+    return courseStackOption(t, m, weeks.map(m.charts.shortDate), series, { tooltipHead: (i) => m.patterns.weekOf(weeks[i]) });
   }
 
-  if (!loaded) return <div className="loading">正在加载…</div>;
+  if (!loaded) return <div className="loading">{m.common.loading}</div>;
   if (!sessions.length) {
     return (
       <div className="narrow">
-        <h1 className="page-title">规律</h1>
-        <Empty title="还没有可以分析的记录">记录 {MIN_CORR} 次以上之后，这里会告诉你哪个时段、多长的学习最容易专注。</Empty>
+        <h1 className="page-title">{m.patterns.title}</h1>
+        <Empty title={m.patterns.emptyTitle}>{m.patterns.emptyBody(MIN_CORR)}</Empty>
       </div>
     );
   }
@@ -99,106 +101,88 @@ export function Patterns() {
   return (
     <div className="patterns">
       <div className="page-head reveal">
-        <h1 className="page-title">规律</h1>
+        <h1 className="page-title">{m.patterns.title}</h1>
       </div>
       <div className="filter-row reveal" style={{ ["--i" as string]: 1 }}>
-        <div className="seg-group" role="group" aria-label="时间范围">
+        <div className="seg-group" role="group" aria-label={m.common.range}>
           {(["30", "90", "all"] as Range[]).map((r) => (
             <button key={r} className="seg" aria-pressed={range === r} onClick={() => setRange(r)}>
-              {r === "all" ? "全部" : `${r} 天`}
+              {r === "all" ? m.common.rangeAll : m.common.rangeDays(Number(r))}
             </button>
           ))}
         </div>
-        <span className="muted filter-note">
-          {list.length} 段学习，专注率 {formatPct(weightedRatio(list))}（各段简单平均 {formatPct(meanSessionRatio(list))}）
-        </span>
+        <span className="muted filter-note">{m.patterns.filterNote(list.length, formatPct(weightedRatio(list)), formatPct(meanSessionRatio(list)))}</span>
       </div>
 
       <div className="pattern-grid">
-        <Card title="几点开始最专注" takeaway={a.hour?.takeaway}>
-          {opts.hour ? <Chart option={opts.hour} height={220} label="按开始小时的专注率" /> : thin(`至少 ${MIN_CORR} 次记录后显示。`)}
-          {a.hour && <p className="caption">柱上数字是次数，少于 {MIN_BUCKET} 次的时段颜色变浅。</p>}
+        <Card title={m.patterns.hourTitle} takeaway={a.hour?.takeaway}>
+          {opts.hour ? <Chart option={opts.hour} height={220} label={m.patterns.hourChart} /> : thin(m.patterns.needBlocks(MIN_CORR))}
+          {a.hour && <p className="caption">{m.patterns.hourCaption(MIN_BUCKET)}</p>}
         </Card>
 
-        <Card title="星期几" takeaway={a.weekday?.takeaway}>
-          {opts.weekday ? <Chart option={opts.weekday} height={220} label="按星期的专注率" /> : thin(`至少 ${MIN_CORR} 次记录后显示。`)}
-          {a.weekday && <p className="caption">柱上数字是有记录的天数。</p>}
+        <Card title={m.patterns.weekdayTitle} takeaway={a.weekday?.takeaway}>
+          {opts.weekday ? <Chart option={opts.weekday} height={220} label={m.patterns.weekdayChart} /> : thin(m.patterns.needBlocks(MIN_CORR))}
+          {a.weekday && <p className="caption">{m.patterns.weekdayCaption}</p>}
         </Card>
 
-        <Card title="学多久更专注" takeaway={a.length?.takeaway}>
-          {opts.length ? <Chart option={opts.length} height={240} label="每次学习的时长和专注率散点图" /> : thin(`至少 ${MIN_CORR} 次记录后显示。`)}
+        <Card title={m.patterns.lengthTitle} takeaway={a.length?.takeaway}>
+          {opts.length ? <Chart option={opts.length} height={240} label={m.patterns.lengthChart} /> : thin(m.patterns.needBlocks(MIN_CORR))}
         </Card>
 
-        <Card title="专注率分布" takeaway={a.dist?.takeaway}>
+        <Card title={m.patterns.distTitle} takeaway={a.dist?.takeaway}>
           {opts.dist && a.dist ? (
             <>
-              <Chart option={opts.dist} height={200} label="每次学习专注率的直方图" />
+              <Chart option={opts.dist} height={200} label={m.patterns.distChart} />
               <dl className="dist-stats">
-                <Stat k="平均" v={formatPct(a.dist.stats.mean)} />
-                <Stat k="中位数" v={formatPct(a.dist.stats.median)} />
-                <Stat k="标准差（百分点）" v={`${(a.dist.stats.sd * 100).toFixed(1)}`} />
+                <Stat k={m.patterns.mean} v={formatPct(a.dist.stats.mean)} />
+                <Stat k={m.patterns.median} v={formatPct(a.dist.stats.median)} />
+                <Stat k={m.patterns.sd} v={`${(a.dist.stats.sd * 100).toFixed(1)}`} />
                 <Stat k="P25–P75" v={`${formatPct(a.dist.stats.p25)}–${formatPct(a.dist.stats.p75)}`} />
               </dl>
-              <p className="caption">这里每次学习算一个点，不按时长加权。</p>
+              <p className="caption">{m.patterns.distCaption}</p>
             </>
           ) : (
-            thin("至少 5 次记录后显示。")
+            thin(m.patterns.distNeed)
           )}
         </Card>
 
-        <Card title="精力与专注" takeaway={a.energy?.takeaway}>
-          {opts.energy ? (
-            <Chart option={opts.energy} height={200} label="按开始前精力的专注率" />
-          ) : (
-            thin(`填写了精力的记录满 ${MIN_CORR} 次后显示。记录时点一下 1–5 即可。`)
-          )}
+        <Card title={m.patterns.energyTitle} takeaway={a.energy?.takeaway}>
+          {opts.energy ? <Chart option={opts.energy} height={200} label={m.patterns.energyChart} /> : thin(m.patterns.energyNeed(MIN_CORR))}
         </Card>
 
-        <Card title="打断与专注" takeaway={a.intr?.takeaway}>
-          {opts.intr ? (
-            <Chart option={opts.intr} height={200} label="按打断次数的专注率" />
-          ) : (
-            thin(`填写了打断次数的记录满 ${MIN_CORR} 次后显示。`)
-          )}
+        <Card title={m.patterns.intrTitle} takeaway={a.intr?.takeaway}>
+          {opts.intr ? <Chart option={opts.intr} height={200} label={m.patterns.intrChart} /> : thin(m.patterns.intrNeed(MIN_CORR))}
         </Card>
 
         <Card
           wide
-          title={period === "week" ? "每周" : "每月"}
+          title={period === "week" ? m.patterns.weekly : m.patterns.monthly}
           takeaway={a.period?.takeaway}
           tools={
-            <div className="seg-group" role="group" aria-label="按周或按月">
+            <div className="seg-group" role="group" aria-label={m.patterns.periodGroup}>
               <button className="seg" aria-pressed={period === "week"} onClick={() => setPeriod("week")}>
-                按周
+                {m.patterns.byWeek}
               </button>
               <button className="seg" aria-pressed={period === "month"} onClick={() => setPeriod("month")}>
-                按月
+                {m.patterns.byMonth}
               </button>
             </div>
           }
         >
-          {opts.period ? (
-            <Chart option={opts.period} height={300} label="每周或每月的专注小时和专注率" />
-          ) : (
-            thin(`记录跨过两个${period === "week" ? "周" : "月"}后显示。`)
-          )}
+          {opts.period ? <Chart option={opts.period} height={300} label={m.patterns.periodChart} /> : thin(m.patterns.periodNeed(period))}
         </Card>
 
-        <Card wide title="每周各课程的时间" takeaway={a.course?.takeaway}>
-          {opts.courseWeeks ? (
-            <Chart option={opts.courseWeeks} height={300} label="每周各课程的专注分钟，堆叠柱状图" />
-          ) : (
-            thin("还没有记课程。")
-          )}
+        <Card wide title={m.patterns.courseWeeksTitle} takeaway={a.course?.takeaway}>
+          {opts.courseWeeks ? <Chart option={opts.courseWeeks} height={300} label={m.patterns.courseWeeksChart} /> : thin(m.patterns.noCourses)}
         </Card>
 
-        <Card wide title="各课程的专注率">
+        <Card wide title={m.patterns.courseRatioTitle}>
           {opts.courseRatio && a.course && (
             <>
-              <Chart option={opts.courseRatio} height={36 + a.course.rows.length * 36} label="各课程的专注率和对应的学习段数" />
+              <Chart option={opts.courseRatio} height={36 + a.course.rows.length * 36} label={m.patterns.courseRatioChart} />
               <p className="caption">
-                条右边是专注率和背后的学习段数，少于 {MIN_COURSE_BLOCKS} 段的不参与比较。一段学习里有几门课时，按各课分钟数把这段时长分给它们。
-                {a.course.unattributedSpan > 0 && ` 另有 ${Math.round(a.course.unattributedSpan)} 分钟的学习没记课程，不算进任何一门。`}
+                {m.patterns.courseRatioCaption(MIN_COURSE_BLOCKS)}
+                {a.course.unattributedSpan > 0 && m.patterns.unattributed(Math.round(a.course.unattributedSpan))}
               </p>
             </>
           )}

@@ -1,4 +1,4 @@
-import type { CourseTime, SessionInput, Settings } from "./db.ts";
+import { LANGUAGES, type CourseTime, type Language, type SessionInput, type Settings } from "./db.ts";
 
 // A client mistake; the API answers it with 400 and the message.
 export class BadRequest extends Error {}
@@ -81,11 +81,23 @@ export function upgradeLegacySession(body: unknown): unknown {
   return { ...rest, courses: focusMin === 0 ? [] : [{ course, minutes: focusMin }] };
 }
 
-export function parseSettings(body: unknown): Settings {
+// Every field is optional so a client can change one setting at a time.
+export function parseSettings(body: unknown): Partial<Settings> {
   const b = (body ?? {}) as Record<string, unknown>;
-  if (!Number.isInteger(b.dailyGoalMin) || (b.dailyGoalMin as number) < 0 || (b.dailyGoalMin as number) > 24 * 60)
-    throw new BadRequest("dailyGoalMin must be an integer from 0 to 1440");
-  if (typeof b.targetRatio !== "number" || b.targetRatio < 0 || b.targetRatio > 1)
-    throw new BadRequest("targetRatio must be a number from 0 to 1");
-  return { dailyGoalMin: b.dailyGoalMin as number, targetRatio: b.targetRatio };
+  const out: Partial<Settings> = {};
+  if (b.dailyGoalMin !== undefined) {
+    if (!Number.isInteger(b.dailyGoalMin) || (b.dailyGoalMin as number) < 0 || (b.dailyGoalMin as number) > 24 * 60)
+      throw new BadRequest("dailyGoalMin must be an integer from 0 to 1440");
+    out.dailyGoalMin = b.dailyGoalMin as number;
+  }
+  if (b.targetRatio !== undefined) {
+    if (typeof b.targetRatio !== "number" || b.targetRatio < 0 || b.targetRatio > 1)
+      throw new BadRequest("targetRatio must be a number from 0 to 1");
+    out.targetRatio = b.targetRatio;
+  }
+  if (b.language !== undefined) {
+    if (!LANGUAGES.includes(b.language as Language)) throw new BadRequest(`language must be one of ${LANGUAGES.join(", ")}`);
+    out.language = b.language as Language;
+  }
+  return out;
 }

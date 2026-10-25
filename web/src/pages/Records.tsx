@@ -2,10 +2,9 @@ import { useMemo } from "react";
 import { link, navigate } from "../router";
 import { Timeline } from "../components/Timeline";
 import { Empty } from "../components/Empty";
-import { addDays, formatDateCn, formatMinutes, formatPct, groupBy, localToday, monthKey, sessionFocus, weightedRatio } from "../stats";
+import { addDays, formatPct, groupBy, localToday, monthKey, sessionFocus, weightedRatio } from "../stats";
 import { courseVar, useData } from "../store";
-
-const monthLabel = (m: string) => `${m.slice(0, 4)} 年 ${Number(m.slice(5, 7))} 月`;
+import { Rich, useT } from "../i18n";
 
 function shiftMonth(m: string, by: number) {
   const [y, mo] = m.split("-").map(Number);
@@ -15,6 +14,7 @@ function shiftMonth(m: string, by: number) {
 
 export function Records({ month }: { month?: string }) {
   const { sessions, loaded, courseSlot } = useData();
+  const t = useT();
   const current = month && /^\d{4}-\d{2}$/.test(month) ? month : monthKey(localToday());
   const months = useMemo(() => [...new Set([monthKey(localToday()), ...sessions.map((s) => monthKey(s.date))])].sort().reverse(), [sessions]);
   const byDate = useMemo(() => groupBy(sessions, (s) => s.date), [sessions]);
@@ -25,8 +25,8 @@ export function Records({ month }: { month?: string }) {
   if (loaded && !sessions.length) {
     return (
       <div className="narrow">
-        <h1 className="page-title">记录</h1>
-        <Empty title="还没有任何记录">坐下学习时点“开始学习”，学完点“结束”，再记下学了哪几门课。</Empty>
+        <h1 className="page-title">{t.records.title}</h1>
+        <Empty title={t.records.emptyTitle}>{t.records.emptyBody}</Empty>
       </div>
     );
   }
@@ -36,21 +36,21 @@ export function Records({ month }: { month?: string }) {
   return (
     <div className="narrow">
       <div className="page-head">
-        <h1 className="page-title">记录</h1>
+        <h1 className="page-title">{t.records.title}</h1>
         <div className="month-picker">
-          <button className="btn btn-ghost month-step" aria-label="上个月" onClick={() => go(shiftMonth(current, -1))}>
+          <button className="btn btn-ghost month-step" aria-label={t.records.prevMonth} onClick={() => go(shiftMonth(current, -1))}>
             <StepIcon dir="prev" />
           </button>
-          <select value={current} onChange={(e) => go(e.target.value)} aria-label="选择月份">
+          <select value={current} onChange={(e) => go(e.target.value)} aria-label={t.records.pickMonth}>
             {(months.includes(current) ? months : [current, ...months]).map((m) => (
               <option key={m} value={m}>
-                {monthLabel(m)}
+                {t.fmt.month(m)}
               </option>
             ))}
           </select>
           <button
             className="btn btn-ghost month-step"
-            aria-label="下个月"
+            aria-label={t.records.nextMonth}
             onClick={() => go(shiftMonth(current, 1))}
             disabled={current >= monthKey(localToday())}
           >
@@ -61,8 +61,8 @@ export function Records({ month }: { month?: string }) {
 
       <p className="muted month-summary">
         {days.length
-          ? `${days.length} 天有记录，共 ${monthSessions.length} 段，专注 ${formatMinutes(monthFocus)}，专注率 ${formatPct(weightedRatio(monthSessions))}。`
-          : "这个月没有记录。"}
+          ? t.records.summary(days.length, monthSessions.length, t.fmt.minutes(monthFocus), formatPct(weightedRatio(monthSessions)))
+          : t.records.none}
       </p>
 
       <ul className="day-list">
@@ -74,9 +74,9 @@ export function Records({ month }: { month?: string }) {
             <li key={d} className="reveal" style={{ ["--i" as string]: Math.min(days.indexOf(d), 8) }}>
               <a className="day-card" {...link(`/day/${d}`)}>
                 <div className="day-card-head">
-                  <span className="day-card-date">{formatDateCn(d)}</span>
+                  <span className="day-card-date">{t.fmt.date(d)}</span>
                   <span className="day-card-stats">
-                    {list.length} 段，专注 {formatMinutes(focus)}，<b>{formatPct(weightedRatio(list))}</b>
+                    <Rich text={t.records.dayStats(list.length, t.fmt.minutes(focus), formatPct(weightedRatio(list)))} />
                   </span>
                 </div>
                 <Timeline sessions={list} previous={byDate.get(addDays(d, -1)) ?? []} compact />

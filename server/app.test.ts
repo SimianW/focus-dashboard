@@ -146,8 +146,11 @@ test("duplicate courses in a session merge, and renaming merges too", async () =
 test("settings have defaults and can be saved", async () => {
   const { call, login } = setup();
   await login();
-  assert.deepEqual((await call("GET", "/api/settings")).json, { dailyGoalMin: 240, targetRatio: 0.75 });
+  assert.deepEqual((await call("GET", "/api/settings")).json, { dailyGoalMin: 240, targetRatio: 0.75, language: "en" });
   const saved = await call("PUT", "/api/settings", { dailyGoalMin: 300, targetRatio: 0.8 });
-  assert.deepEqual(saved.json, { dailyGoalMin: 300, targetRatio: 0.8 });
+  assert.deepEqual(saved.json, { dailyGoalMin: 300, targetRatio: 0.8, language: "en" });
+  const lang = await call("PUT", "/api/settings", { language: "zh" });
+  assert.deepEqual(lang.json, { dailyGoalMin: 300, targetRatio: 0.8, language: "zh" });
   assert.equal((await call("PUT", "/api/settings", { dailyGoalMin: 300, targetRatio: 2 })).status, 400);
+  assert.equal((await call("PUT", "/api/settings", { language: "fr" })).status, 400);
 });

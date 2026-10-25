@@ -1,5 +1,5 @@
-// The unsaved new entry lives in localStorage, so "开始学习" can be tapped
-// when sitting down and "结束" an hour later, even after closing the tab.
+// The unsaved new entry lives in localStorage, so "Start studying" can be
+// tapped when sitting down and "End" an hour later, even after closing the tab.
 import { localToday } from "./stats";
 
 export type DraftRow = { key: string; course: string; minutes: string };

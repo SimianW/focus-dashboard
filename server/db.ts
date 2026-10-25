@@ -21,9 +21,13 @@ export type SessionInput = Omit<Session, "id">;
 export type Settings = {
   dailyGoalMin: number; // target focus minutes per day
   targetRatio: number; // target focus ratio, 0–1
+  language: Language;
 };
 
-const DEFAULT_SETTINGS: Settings = { dailyGoalMin: 240, targetRatio: 0.75 };
+export const LANGUAGES = ["en", "zh"] as const;
+export type Language = (typeof LANGUAGES)[number];
+
+const DEFAULT_SETTINGS: Settings = { dailyGoalMin: 240, targetRatio: 0.75, language: "en" };
 
 // Each entry upgrades the schema by one version; never edit a shipped entry.
 const MIGRATIONS = [
@@ -218,8 +222,9 @@ export function createStore(db: DatabaseSync) {
       );
       return { ...DEFAULT_SETTINGS, ...stored };
     },
-    saveSettings(s: Settings) {
-      for (const [k, v] of Object.entries(s)) writeSetting.run(k, JSON.stringify(v));
+    // Keys left out keep their stored value.
+    saveSettings(s: Partial<Settings>) {
+      for (const [k, v] of Object.entries(s)) if (v !== undefined) writeSetting.run(k, JSON.stringify(v));
       return this.getSettings();
     },
   };

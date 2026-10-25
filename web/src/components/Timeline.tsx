@@ -1,5 +1,6 @@
 import { useData, courseVar } from "../store";
-import { crossesMidnight, formatMinutes, formatPct, sessionRatio, sessionSpan, toMinutes, type Session } from "../stats";
+import { useT } from "../i18n";
+import { crossesMidnight, formatPct, sessionRatio, sessionSpan, toMinutes, type Session } from "../stats";
 
 const DAY = 24 * 60;
 
@@ -23,6 +24,7 @@ export function Timeline({
   onSelect?: (s: Session) => void;
 }) {
   const { courseSlot } = useData();
+  const t = useT();
   const blocks: Block[] = [
     ...previous.filter(crossesMidnight).map((s) => ({ s, from: 0, to: toMinutes(s.end), tail: true })),
     ...sessions.map((s) => {
@@ -39,14 +41,14 @@ export function Timeline({
         ))}
         {blocks.map(({ s, from, to, tail }) => {
           const span = sessionSpan(s);
-          const courses = s.courses.map((c) => `${c.course} ${formatMinutes(c.minutes)}`).join("，");
-          const title = `${s.start}–${s.end}${courses ? `，${courses}` : ""}，专注率 ${formatPct(sessionRatio(s))}${tail ? "（前一天开始）" : ""}`;
+          const courses = s.courses.map((c) => `${c.course} ${t.fmt.minutes(c.minutes)}`);
+          const title = t.timeline.block(s.start, s.end, courses, formatPct(sessionRatio(s)), tail);
           const style = { left: `${(from / DAY) * 100}%`, width: `max(3px, ${((to - from) / DAY) * 100}%)` };
           const inner = s.courses.map((c) => (
             <span key={c.course} className="tl-seg" style={{ height: `${(c.minutes / span) * 100}%`, ["--c" as string]: courseVar(courseSlot(c.course)) }} />
           ));
           return onSelect && !tail ? (
-            <button key={`${s.id}${tail}`} type="button" className="tl-block" style={style} title={title} aria-label={`修改：${title}`} onClick={() => onSelect(s)}>
+            <button key={`${s.id}${tail}`} type="button" className="tl-block" style={style} title={title} aria-label={t.timeline.edit(title)} onClick={() => onSelect(s)}>
               {inner}
             </button>
           ) : (

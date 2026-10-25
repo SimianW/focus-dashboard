@@ -17,7 +17,7 @@ const COURSES: [string, number][] = [
   ["STAT231", -0.05],
   ["ECON101", -0.1],
 ];
-const NOTES = ["", "", "", "", "刷题", "看网课", "复习错题", "做作业", "手机放在别的房间", "有点困"];
+const NOTES = ["", "", "", "", "Practice problems", "Lecture videos", "Reviewed mistakes", "Assignment", "Phone in another room", "A bit sleepy"];
 
 // Deterministic PRNG (mulberry32) so repeated seeds look the same.
 let state = 20261023;

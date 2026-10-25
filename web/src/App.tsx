@@ -9,6 +9,7 @@ import { Records } from "./pages/Records";
 import { DayDetail } from "./pages/DayDetail";
 import { Patterns } from "./pages/Patterns";
 import { SettingsPage } from "./pages/Settings";
+import { useT, type Messages } from "./i18n";
 
 type Auth = "checking" | "in" | "out";
 
@@ -28,14 +29,15 @@ export function App() {
   return <Shell onLogout={() => setAuth("out")} />;
 }
 
-const TABS: { to: string; label: string; match: Route["name"][] }[] = [
-  { to: "/", label: "概览", match: ["overview"] },
-  { to: "/records", label: "记录", match: ["records", "day", "edit"] },
-  { to: "/patterns", label: "规律", match: ["patterns"] },
-  { to: "/settings", label: "设置", match: ["settings"] },
+const TABS: { to: string; label: keyof Messages["app"]; match: Route["name"][] }[] = [
+  { to: "/", label: "overview", match: ["overview"] },
+  { to: "/records", label: "records", match: ["records", "day", "edit"] },
+  { to: "/patterns", label: "patterns", match: ["patterns"] },
+  { to: "/settings", label: "settings", match: ["settings"] },
 ];
 
 function Shell({ onLogout }: { onLogout: () => void }) {
+  const t = useT();
   const { path, query } = useLocation();
   const route = matchRoute(path, query);
   const [toast, setToast] = useState<string | null>(null);
@@ -54,17 +56,17 @@ function Shell({ onLogout }: { onLogout: () => void }) {
         <div className="topbar-inner">
           <a className="brand" {...link("/")}>
             <BrandMark />
-            专注记录
+            {t.app.brand}
           </a>
-          <nav className="tabs" aria-label="主导航">
-            {TABS.map((t) => (
-              <a key={t.to} className="tab" aria-current={active(t) ? "page" : undefined} {...link(t.to)}>
-                {t.label}
+          <nav className="tabs" aria-label={t.app.mainNav}>
+            {TABS.map((tab) => (
+              <a key={tab.to} className="tab" aria-current={active(tab) ? "page" : undefined} {...link(tab.to)}>
+                {t.app[tab.label]}
               </a>
             ))}
           </nav>
           <a className="btn btn-accent add-top" aria-current={route.name === "add" ? "page" : undefined} {...link("/add")}>
-            <PlusIcon /> 记一次
+            <PlusIcon /> {t.app.logBlock}
           </a>
         </div>
       </header>
@@ -73,20 +75,20 @@ function Shell({ onLogout }: { onLogout: () => void }) {
         <Page route={route} onLogout={onLogout} />
       </main>
 
-      <nav className="bottombar" aria-label="主导航">
-        {TABS.slice(0, 2).map((t) => (
-          <a key={t.to} className="bb-tab" aria-current={active(t) ? "page" : undefined} {...link(t.to)}>
-            <TabIcon name={t.to} />
-            {t.label}
+      <nav className="bottombar" aria-label={t.app.mainNav}>
+        {TABS.slice(0, 2).map((tab) => (
+          <a key={tab.to} className="bb-tab" aria-current={active(tab) ? "page" : undefined} {...link(tab.to)}>
+            <TabIcon name={tab.to} />
+            {t.app[tab.label]}
           </a>
         ))}
-        <a className="bb-add" aria-label="记一次" aria-current={route.name === "add" ? "page" : undefined} {...link("/add")}>
+        <a className="bb-add" aria-label={t.app.logBlock} aria-current={route.name === "add" ? "page" : undefined} {...link("/add")}>
           <PlusIcon />
         </a>
-        {TABS.slice(2).map((t) => (
-          <a key={t.to} className="bb-tab" aria-current={active(t) ? "page" : undefined} {...link(t.to)}>
-            <TabIcon name={t.to} />
-            {t.label}
+        {TABS.slice(2).map((tab) => (
+          <a key={tab.to} className="bb-tab" aria-current={active(tab) ? "page" : undefined} {...link(tab.to)}>
+            <TabIcon name={tab.to} />
+            {t.app[tab.label]}
           </a>
         ))}
       </nav>

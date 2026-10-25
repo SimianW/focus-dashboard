@@ -1,6 +1,8 @@
 import { link } from "../router";
+import { useT } from "../i18n";
 
 export function Empty({ title, children, action = true }: { title: string; children?: React.ReactNode; action?: boolean }) {
+  const t = useT();
   return (
     <div className="empty">
       <EmptyArt />
@@ -9,10 +11,10 @@ export function Empty({ title, children, action = true }: { title: string; child
       {action && (
         <div className="row-actions" style={{ justifyContent: "center" }}>
           <a className="btn btn-accent btn-lg" {...link("/add?start=now")}>
-            开始学习
+            {t.common.startStudying}
           </a>
           <a className="btn btn-ghost btn-lg" {...link("/add")}>
-            补记一段
+            {t.common.logPast}
           </a>
         </div>
       )}

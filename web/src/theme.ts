@@ -37,7 +37,7 @@ export function readTheme() {
   };
 }
 
-/** Chart colour for a course slot from the store (0 = 其他). */
+/** Chart colour for a course slot from the store (0 = Other). */
 export const courseColor = (t: ChartTheme, slot: number) => (slot ? t.courses[slot - 1] : t.courseOther);
 
 export function useChartTheme(): ChartTheme {
