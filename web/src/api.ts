@@ -1,4 +1,7 @@
 import type { Session, SessionInput, Settings } from "./stats";
+import type { PickList } from "./pick";
+import type { Running, RunningInput } from "./running";
+import type { RunningKey } from "./runningSync";
 import { messages, type Messages } from "./i18n";
 
 export type CourseSummary = { course: string; sessions: number; minutes: number; lastDate: string };
@@ -7,6 +10,8 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /** The answer's JSON body, e.g. the stored block with a 409 from /api/running. */
+    readonly data?: unknown,
   ) {
     super(message);
   }
@@ -70,7 +75,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     if (res.status === 401 && path !== "/api/login") onUnauthorized();
-    throw new ApiError(data?.error ? translateError(data.error) : messages().errors.status(res.status), res.status);
+    throw new ApiError(data?.error ? translateError(data.error) : messages().errors.status(res.status), res.status, data);
   }
   return data as T;
 }
@@ -88,4 +93,10 @@ export const api = {
   settings: () => request<Settings>("GET", "/api/settings"),
   saveSettings: (s: Partial<Settings>) => request<Settings>("PUT", "/api/settings", s),
   importSessions: (sessions: unknown[]) => request<{ imported: number }>("POST", "/api/import", { sessions }),
+  pickList: () => request<PickList>("GET", "/api/pick-list"),
+  running: () => request<Running | null>("GET", "/api/running"),
+  // Each names the block it expects the server to hold; 409 when another device changed it.
+  putRunning: (r: RunningInput, expected: RunningKey | null) => request<Running>("PUT", "/api/running", { ...r, expected }),
+  deleteRunning: ({ date, start }: RunningKey) =>
+    request<void>("DELETE", `/api/running?${new URLSearchParams({ date, start })}`),
 };

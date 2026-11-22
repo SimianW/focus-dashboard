@@ -1,9 +1,11 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import { Hono, type Context } from "hono";
 import { getCookie } from "hono/cookie";
 import { serveStatic } from "@hono/node-server/serve-static";
 import type { Store } from "./db.ts";
 import type { createAuth } from "./auth.ts";
-import { BadRequest, parseCourseName, parseSession, parseSettings, upgradeLegacySession } from "./validate.ts";
+import { fetchPickList, type LifeosConfig } from "./lifeos.ts";
+import { BadRequest, parseCourseName, parseRunningKey, parseRunningWrite, parseSession, parseSettings, upgradeLegacySession } from "./validate.ts";
 
 type Auth = ReturnType<typeof createAuth>;
 
@@ -24,7 +26,21 @@ async function jsonBody(c: Context) {
 const clientId = (c: Context) =>
   c.req.header("x-forwarded-for")?.split(",")[0].trim() || c.req.header("x-real-ip") || "local";
 
-export function createApp(store: Store, auth: Auth, staticDir?: string) {
+const sha256 = (s: string) => createHash("sha256").update(s).digest();
+
+// True when the header is "Bearer <readToken>". Never true without a token.
+function readTokenMatches(header: string | undefined, readToken: string | undefined) {
+  const given = header?.match(/^Bearer (.+)$/i)?.[1];
+  return !!readToken && given !== undefined && timingSafeEqual(sha256(given), sha256(readToken));
+}
+
+export type AppOptions = {
+  staticDir?: string; // built web app to serve
+  readToken?: string; // bearer token that may only read GET /api/snapshot
+  lifeos?: LifeosConfig; // where the pick list of tasks comes from
+};
+
+export function createApp(store: Store, auth: Auth, { staticDir, readToken, lifeos }: AppOptions = {}) {
   const app = new Hono();
 
   app.onError((err, c) => {
@@ -49,10 +65,15 @@ export function createApp(store: Store, auth: Auth, staticDir?: string) {
     return c.json({ ok: true });
   });
 
-  // Everything below requires a signed session cookie.
+  // Everything below requires a signed session cookie, except that life-os
+  // may read GET /api/snapshot with the read-only token and nothing more.
   app.use("/api/*", async (c, next) => {
-    if (!auth.verify(getCookie(c, auth.cookieName))) return c.json({ error: "unauthorized" }, 401);
-    await next();
+    if (auth.verify(getCookie(c, auth.cookieName))) return next();
+    if (readTokenMatches(c.req.header("authorization"), readToken)) {
+      if (c.req.method === "GET" && c.req.path === "/api/snapshot") return next();
+      return c.json({ error: "read-only token" }, 403);
+    }
+    return c.json({ error: "unauthorized" }, 401);
   });
 
   app.get("/api/me", (c) => c.json({ ok: true }));
@@ -70,6 +91,28 @@ export function createApp(store: Store, auth: Auth, staticDir?: string) {
     store.deleteSession(Number(c.req.param("id"))) ? c.body(null, 204) : c.json({ error: "not found" }, 404),
   );
 
+  // Everything life-os reads: every study block and the one in progress.
+  app.get("/api/snapshot", (c) => c.json({ sessions: store.listSessions(), running: store.getRunning() }));
+
+  app.get("/api/running", (c) => c.json(store.getRunning()));
+
+  // Each write names the block the page believes is stored (see Store.setRunning);
+  // 409 with the stored block when another device has changed it since.
+  const changed = (c: Context, running: unknown) => c.json({ error: "running block changed", running }, 409);
+
+  app.put("/api/running", async (c) => {
+    const { running, expected } = parseRunningWrite(await jsonBody(c));
+    const result = store.setRunning(running, expected);
+    return result.ok ? c.json(result.running) : changed(c, result.running);
+  });
+
+  app.delete("/api/running", (c) => {
+    const result = store.clearRunning(parseRunningKey(c.req.query()));
+    return result.ok ? c.body(null, 204) : changed(c, result.running);
+  });
+
+  app.get("/api/pick-list", async (c) => c.json(await fetchPickList(lifeos)));
+
   app.get("/api/courses", (c) => c.json(store.listCourses()));
 
   app.post("/api/courses/rename", async (c) => {
@@ -83,10 +126,10 @@ export function createApp(store: Store, auth: Auth, staticDir?: string) {
 
   app.get("/api/export", (c) => {
     c.header("Content-Disposition", `attachment; filename="focus-export-${new Date().toISOString().slice(0, 10)}.json"`);
-    return c.json({ version: 2, settings: store.getSettings(), sessions: store.listSessions() });
+    return c.json({ version: 3, settings: store.getSettings(), sessions: store.listSessions() });
   });
 
-  // Appends sessions from an export file, either version. Validates every row
+  // Appends sessions from an export file of any version (1–3). Validates every row
   // before writing any.
   app.post("/api/import", async (c) => {
     const { sessions } = (await jsonBody(c)) as { sessions?: unknown };

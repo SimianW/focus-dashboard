@@ -1,4 +1,4 @@
-import { LANGUAGES, type CourseTime, type Language, type SessionInput, type Settings } from "./db.ts";
+import { LANGUAGES, type CourseTime, type Entry, type Running, type RunningKey, type Task, type Language, type SessionInput, type Settings } from "./db.ts";
 
 // A client mistake; the API answers it with 400 and the message.
 export class BadRequest extends Error {}
@@ -35,35 +35,98 @@ export const parseCourseName = (v: unknown) => {
   return name;
 };
 
-// Entries for the same course are merged, so each course appears once.
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+// A life-os task as it was when picked.
+export function parseTask(v: unknown): Task {
+  if (!isObject(v)) throw new BadRequest("task must be an object");
+  if (typeof v.id !== "string" || !v.id || v.id.length > 200)
+    throw new BadRequest("task id must be a non-empty string of at most 200 characters");
+  const title = typeof v.title === "string" ? v.title.trim() : "";
+  if (!title || title.length > 200) throw new BadRequest("task title must be 1 to 200 characters");
+  if (v.subject !== null && typeof v.subject !== "string") throw new BadRequest("task subject must be a string or null");
+  const subject = v.subject?.trim() || null;
+  if (subject && subject.length > 100) throw new BadRequest("task subject must be at most 100 characters");
+  return { id: v.id, title, subject };
+}
+
+// A typed row ({course, minutes}) or a task row ({task, minutes, course?}).
+// Typed rows for the same course merge, and so do rows for the same task; a
+// task row and a typed row never merge, even with the same course. Rows keep
+// their order.
 function parseCourses(v: unknown, span: number): CourseTime[] {
   if (!Array.isArray(v)) throw new BadRequest("courses must be a list");
-  const merged = new Map<string, number>();
+  const merged = new Map<string, CourseTime>();
   for (const entry of v) {
     const e = (entry ?? {}) as Record<string, unknown>;
-    const course = parseCourseName(e.course);
+    const { course, task } = parseEntry(e);
     if (!Number.isInteger(e.minutes) || (e.minutes as number) < 1)
       throw new BadRequest(`minutes for ${course} must be a positive integer`);
-    merged.set(course, (merged.get(course) ?? 0) + (e.minutes as number));
+    const key = task ? `task:${task.id}` : `course:${course}`;
+    const row = merged.get(key);
+    if (row) row.minutes += e.minutes as number;
+    else merged.set(key, { course, minutes: e.minutes as number, task });
   }
   if (merged.size > 10) throw new BadRequest("a session can list at most 10 courses");
-  const total = [...merged.values()].reduce((a, b) => a + b, 0);
+  const rows = [...merged.values()];
+  const total = rows.reduce((a, r) => a + r.minutes, 0);
   if (total > span) throw new BadRequest(`course time (${total} min) cannot exceed the session span (${span} min)`);
-  return [...merged].map(([course, minutes]) => ({ course, minutes }));
+  return rows;
+}
+
+// The course and task of a row, without its minutes. A task row's course
+// defaults to the task's subject, then its title.
+export function parseEntry(v: unknown): Entry {
+  const e = (v ?? {}) as Record<string, unknown>;
+  if (e.task === undefined || e.task === null) return { course: parseCourseName(e.course), task: null };
+  const task = parseTask(e.task);
+  const course = parseCourseName(e.course === undefined || e.course === null ? (task.subject ?? task.title) : e.course);
+  return { course, task };
+}
+
+const parseDate = (v: unknown) => {
+  if (typeof v !== "string" || !DATE.test(v) || !isRealDate(v)) throw new BadRequest("date must be YYYY-MM-DD");
+  return v;
+};
+
+const parseStart = (v: unknown) => {
+  if (typeof v !== "string" || !TIME.test(v)) throw new BadRequest("start must be HH:MM");
+  return v;
+};
+
+// The block in progress: when it started and, once picked, what it is for.
+export function parseRunning(body: unknown): Running {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const date = parseDate(b.date);
+  const start = parseStart(b.start);
+  if (b.entry !== null && !isObject(b.entry)) throw new BadRequest("entry must be null or a row without minutes");
+  return { date, start, entry: b.entry === null ? null : parseEntry(b.entry) };
+}
+
+// A running block's date and start, as a write names the block it expects.
+export function parseRunningKey(v: unknown): RunningKey {
+  const k = (v ?? {}) as Record<string, unknown>;
+  return { date: parseDate(k.date), start: parseStart(k.start) };
+}
+
+// What PUT /api/running takes: the block, and the one it expects to replace (null: none).
+export function parseRunningWrite(body: unknown): { running: Running; expected: RunningKey | null } {
+  const b = (body ?? {}) as Record<string, unknown>;
+  if (b.expected !== null && !isObject(b.expected)) throw new BadRequest("expected must be null or the running block's date and start");
+  return { running: parseRunning(b), expected: b.expected === null ? null : parseRunningKey(b.expected) };
 }
 
 export function parseSession(body: unknown): SessionInput {
   const b = (body ?? {}) as Record<string, unknown>;
-  if (typeof b.date !== "string" || !DATE.test(b.date) || !isRealDate(b.date))
-    throw new BadRequest("date must be YYYY-MM-DD");
-  if (typeof b.start !== "string" || !TIME.test(b.start)) throw new BadRequest("start must be HH:MM");
+  const date = parseDate(b.date);
+  const start = parseStart(b.start);
   if (typeof b.end !== "string" || !TIME.test(b.end)) throw new BadRequest("end must be HH:MM");
-  const span = spanMinutes(b.start, b.end);
+  const span = spanMinutes(start, b.end);
   if (span > 16 * 60) throw new BadRequest("a session cannot be longer than 16 hours");
   const note = typeof b.note === "string" ? b.note.slice(0, 1000) : "";
   return {
-    date: b.date,
-    start: b.start,
+    date,
+    start,
     end: b.end,
     courses: parseCourses(b.courses, span),
     energy: optionalInt(b.energy, 1, 5, "energy"),

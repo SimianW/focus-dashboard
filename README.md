@@ -48,7 +48,12 @@ pnpm -C web test && pnpm -C web typecheck
 | `DATA_DIR`      | `./data`    | Where `focus.db` lives.                                       |
 | `COOKIE_SECURE` | `true`      | Set to `false` only for plain-HTTP local development.         |
 | `STATIC_DIR`    | (none)      | Built web app to serve; the Docker image sets it.             |
+| `READ_TOKEN`    | (none)      | Optional bearer token, at least 32 characters, that can only read `GET /api/snapshot` (for life-os). |
+| `LIFEOS_URL`    | (none)      | Base URL of life-os; Focus fetches `<LIFEOS_URL>/api/pick-list` for the task pick list. |
+| `LIFEOS_TOKEN`  | (none)      | Bearer token Focus sends to life-os. Without it or `LIFEOS_URL` the pick list is unavailable. |
 | `PORT`, `HOST`  | `3000`, `0.0.0.0` | Listen address.                                         |
+
+An empty value counts as unset. With life-os unset or unreachable, Focus works as before: names are typed by hand.
 
 ## Deployment
 

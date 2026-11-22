@@ -52,6 +52,7 @@
   --r-md: 10px;
   --r-lg: 14px;
   --shadow-pop: 0 1px 2px rgba(20, 20, 19, 0.04), 0 12px 32px -12px rgba(20, 20, 19, 0.16);
+  --scrim: rgba(20, 20, 19, 0.32);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
 }
@@ -99,6 +100,7 @@
     --heat-4: #f2ae92;
 
     --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.3), 0 16px 40px -12px rgba(0, 0, 0, 0.55);
+    --scrim: rgba(0, 0, 0, 0.5);
   }
 }
 
@@ -2482,4 +2484,298 @@ button.tl-block:hover {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas: "name time" "meter meter";
   }
+}
+
+/* ----- Tasks from life-os ----- */
+
+/* Subject chip: the course a task belongs to, in its course colour. */
+.subj {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px 0 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--c, var(--course-other)) 14%, var(--panel));
+  color: var(--ink-2);
+  font: 600 12.5px/1 var(--sans);
+  white-space: nowrap;
+}
+
+.subj .dot {
+  width: 7px;
+  height: 7px;
+}
+
+.tag-today {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--clay-wash);
+  color: var(--clay-ink);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.btn[aria-busy="true"] {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+/* Picker: a bottom sheet on a phone, a centred dialog above 720px. */
+.picker {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--scrim);
+  animation: scrim-in 0.2s ease-out;
+}
+
+.sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px 18px calc(20px + env(safe-area-inset-bottom));
+  border-radius: 20px 20px 0 0;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: var(--shadow-pop);
+  animation: sheet-in 0.32s var(--ease-out);
+}
+
+.sheet:focus {
+  outline: none;
+}
+
+@keyframes scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+}
+
+.grabber {
+  display: block;
+  width: 36px;
+  height: 4px;
+  margin: 0 auto 12px;
+  border-radius: 2px;
+  background: var(--border-strong);
+}
+
+.sheet-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.sheet-title {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 22px;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.sheet-sub {
+  margin-top: 2px;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+
+.pick-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pick {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  width: 100%;
+  padding: 12px 4px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pick:hover {
+  background: color-mix(in srgb, var(--sunken) 55%, transparent);
+}
+
+.pick-title {
+  display: block;
+  font-size: 15.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--ink);
+}
+
+.pick-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.pick-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* A task already in the block. */
+.pick-tick {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--page);
+}
+
+.pick-other {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-md);
+}
+
+.pick-other .pick-meta {
+  margin-top: 0;
+}
+
+.other-icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--sunken);
+  color: var(--ink-2);
+}
+
+@media (min-width: 721px) {
+  .sheet {
+    left: 50%;
+    right: auto;
+    bottom: auto;
+    top: 96px;
+    width: 480px;
+    max-height: calc(100dvh - 128px);
+    transform: translateX(-50%);
+    padding: 20px 22px 22px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    animation-name: dialog-in;
+  }
+  .grabber {
+    display: none;
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    transform: translate(-50%, 8px);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scrim,
+  .sheet {
+    animation: none;
+  }
+}
+
+/* Running block: the picked task under the timer. */
+.stamp-text .stamp-task {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 4px 0 3px;
+  color: var(--ink);
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.stamp-text .subj {
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+/* Save form: task rows, Add a row, Other. */
+.cr-task {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.cr-task .cr-title {
+  line-height: 1.35;
+}
+
+.add-row {
+  align-self: flex-start;
+}
+
+.other-box {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-md);
+}
+
+.other-box-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+
+.other-box-head b {
+  color: var(--ink-2);
+  font-weight: 600;
+}
+
+/* History: a task row takes its own line. */
+.sr-courses > .sr-task {
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  gap: 4px 8px;
 }

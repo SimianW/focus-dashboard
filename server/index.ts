@@ -9,9 +9,20 @@ if (!password || password.length < 8) {
   process.exit(1);
 }
 
+// Optional; an empty value counts as unset.
+const readToken = process.env.READ_TOKEN || undefined;
+if (readToken !== undefined && readToken.length < 32) {
+  console.error("READ_TOKEN must be at least 32 characters when set");
+  process.exit(1);
+}
+
 const store = createStore(openDb(process.env.DATA_DIR ?? "./data"));
 const auth = createAuth(password, process.env.COOKIE_SECURE !== "false");
-const app = createApp(store, auth, process.env.STATIC_DIR);
+const app = createApp(store, auth, {
+  staticDir: process.env.STATIC_DIR,
+  readToken,
+  lifeos: { url: process.env.LIFEOS_URL || undefined, token: process.env.LIFEOS_TOKEN || undefined },
+});
 const port = Number(process.env.PORT ?? 3000);
 
 serve({ fetch: app.fetch, port, hostname: process.env.HOST ?? "0.0.0.0" }, () =>

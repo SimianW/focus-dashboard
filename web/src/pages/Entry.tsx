@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
-import { courseVar, useData } from "../store";
+import { courseVar, currentDraft, useData } from "../store";
 import { link, navigate } from "../router";
-import { clearDraft, emptyDraft, isDirty, isRunning, openDraft, readDraft, rowKey, writeDraft, type Draft, type DraftRow } from "../draft";
+import { clearDraft, emptyDraft, isDirty, isRunning, openDraft, rowKey, rowsToCourses, sessionRows, writeDraft, type Draft, type DraftRow } from "../draft";
+import { pickerEntries, toggleTask } from "../pick";
+import { runningStep, startDraft } from "../running";
+import { keyOf } from "../runningSync";
+import { usePickList } from "../usePickList";
+import { SubjectChip, TaskPicker, useStartPicker } from "../components/TaskPicker";
 import { prefersReducedMotion } from "../motion";
 import {
   addDays,
@@ -10,7 +15,6 @@ import {
   formatPct,
   localTime,
   localToday,
-  normalizeCourses,
   spanMin,
   TIME_RE,
   toMinutes,
@@ -23,17 +27,46 @@ const MAX_COURSES = 10;
 
 const parseMin = (v: string) => (v.trim() === "" ? null : Number(v));
 
-export function Entry({ id, date, startNow }: { id?: number; date?: string; startNow?: boolean }) {
-  const { sessions, courses, courseSlot, loaded, reload, toast } = useData();
+/** What a row shows: a task's title, else the course typed. */
+const labelOf = (r: DraftRow) => r.task?.title ?? r.course;
+
+type EntryProps = { id?: number; date?: string; startNow?: boolean };
+
+export function Entry(props: EntryProps) {
+  const { loaded, refreshRunning, runningConflicts } = useData();
+  const t = useT();
+  const isNew = props.id === undefined;
+  // A new entry opens once the running block has been read again: another
+  // device may have started one since this page loaded.
+  const [fresh, setFresh] = useState(!isNew);
+  useEffect(() => {
+    if (!isNew) return;
+    let live = true;
+    refreshRunning().then(() => live && setFresh(true));
+    return () => {
+      live = false;
+    };
+  }, [isNew, refreshRunning]);
+  if (isNew && (!loaded || !fresh)) return <div className="loading">{t.common.loading}</div>;
+  // When another device changed the running block first, a new form re-opens
+  // on the server's block. (A separate entry, `kept`, never writes the block,
+  // so its own writes cause no conflict.)
+  return <EntryForm key={isNew ? runningConflicts : undefined} {...props} />;
+}
+
+function EntryForm({ id, date, startNow }: EntryProps) {
+  const { sessions, courses, courseSlot, loaded, reload, toast, running, setRunning, undelivered, openRunning } = useData();
   const t = useT();
   const fm = t.fmt.minutes;
   const editing = id !== undefined ? sessions.find((s) => s.id === id) : undefined;
-  const [opened] = useState(() => (id !== undefined ? { form: emptyDraft(), kept: null } : openDraft(readDraft(), { date, startNow })));
+  const [opened] = useState<ReturnType<typeof openDraft>>(() =>
+    id !== undefined ? { form: emptyDraft(), kept: null } : openDraft(currentDraft(running, undelivered), { date, startNow }),
+  );
   const [form, setForm] = useState<Draft>(opened.form);
   // A separate entry while a block runs: never written to or cleared from the draft.
   const kept = opened.kept;
 
-  // Drop ?start=now so a reload does not stamp again.
+  // Drop ?start=now so a reload does not start again.
   useEffect(() => {
     if (startNow) navigate("/add", { replace: true });
   }, [startNow]);
@@ -53,7 +86,7 @@ export function Entry({ id, date, startNow }: { id?: number; date?: string; star
       date: editing.date,
       start: editing.start,
       end: editing.end,
-      rows: editing.courses.map((c) => ({ key: rowKey(), course: c.course, minutes: String(c.minutes) })),
+      rows: sessionRows(editing.courses),
       energy: editing.energy,
       interruptions: editing.interruptions === null ? "" : String(editing.interruptions),
       note: editing.note,
@@ -67,6 +100,42 @@ export function Entry({ id, date, startNow }: { id?: number; date?: string; star
   useEffect(() => {
     if (adding) newInput.current?.focus();
   }, [adding]);
+
+  // The running block lives on the server: keep its day, start and first row
+  // in step with this form while it runs, and end it once the form stops
+  // running (End, Clear, Start cleared, another day), if this form owns it.
+  // Each write expects the form's own block; one that fails (network, 5xx)
+  // leaves the server's block shown again and is not sent again until the
+  // form changes. A write the form opened on while it was still on its way
+  // (Start on Overview) is waited on; if it fails, the form sends it again.
+  const [settledAt, setSettledAt] = useState(0);
+  const [own] = useState(() => {
+    const { own, settled } = openRunning(opened.form);
+    settled?.then(() => setSettledAt((n) => n + 1));
+    return own;
+  });
+  const failed = useRef<Draft | null>(null);
+  useEffect(() => {
+    if (id !== undefined || kept || form === failed.current) return;
+    const step = runningStep(form, running, own.mine);
+    if (!step) return;
+    const next = step === "end" ? null : step.put;
+    const write = own.ask(next);
+    setRunning(next, keyOf(write.expected)).then((o) => {
+      write.settle(o === "ok");
+      if (o === "failed") failed.current = form;
+    });
+  }, [form, running, id, kept, setRunning, own, settledAt]);
+
+  // life-os's task list: rows are picked from it when it is available.
+  const pick = usePickList();
+  const withTasks = pick.list?.available === true;
+  const [picking, setPicking] = useState(false);
+  const start = useStartPicker(pick, (tapped, task) => setForm((f) => (f.start ? f : startDraft(f, tapped, task))));
+  // "Start studying" by link (?start=now): the same start flow as the card below.
+  useEffect(() => {
+    if (opened.startAt) start.tap(opened.startAt);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setForm((f) => ({ ...f, [k]: v }));
   const setRow = (key: string, minutes: string) => setForm((f) => ({ ...f, rows: f.rows.map((r) => (r.key === key ? { ...r, minutes } : r)) }));
@@ -91,7 +160,7 @@ export function Entry({ id, date, startNow }: { id?: number; date?: string; star
     if (span! > 16 * 60) return t.entry.tooLong(fm(span!));
     for (const r of rows) {
       const m = parseMin(r.minutes);
-      if (m === null || !Number.isInteger(m) || m <= 0) return t.entry.rowMinutes(r.course);
+      if (m === null || !Number.isInteger(m) || m <= 0) return t.entry.rowMinutes(labelOf(r));
     }
     if (rows.length > MAX_COURSES) return t.entry.maxCourses(MAX_COURSES);
     if (over) return t.entry.over(fm(focus), fm(-left!));
@@ -105,13 +174,23 @@ export function Entry({ id, date, startNow }: { id?: number; date?: string; star
     const recent = addDays(localToday(), -14);
     return [...courses].sort((a, b) => Number(b.lastDate >= recent) - Number(a.lastDate >= recent) || b.sessions - a.sessions).map((c) => c.course);
   }, [courses]);
-  const inForm = new Set(rows.map((r) => r.course));
+  // Course chips toggle typed rows only; a task row of the same course is a different row.
+  const typedRows = rows.filter((r) => !r.task);
+  const inForm = new Set(typedRows.map((r) => r.course));
+  const entries = pickerEntries(pick.list ?? null, rows);
 
   // ----- actions -----
   function addCourse(name: string) {
     const course = name.trim().slice(0, 40);
     if (!course || inForm.has(course)) return;
-    setForm((f) => ({ ...f, rows: [...f.rows, { key: rowKey(), course, minutes: "" }] }));
+    setForm((f) => ({ ...f, rows: [...f.rows, { key: rowKey(), course, minutes: "", task: null }] }));
+  }
+
+  function pickTask(task: Parameters<typeof toggleTask>[1]) {
+    setPicking(false);
+    const step = toggleTask(rows, task);
+    if ("remove" in step) removeRow(step.remove);
+    else setForm((f) => ({ ...f, rows: [...f.rows, step.add] }));
   }
 
   function removeRow(key: string) {
@@ -131,7 +210,7 @@ export function Entry({ id, date, startNow }: { id?: number; date?: string; star
   }
 
   function toggleChip(course: string) {
-    const row = rows.find((r) => r.course === course);
+    const row = typedRows.find((r) => r.course === course);
     if (row) removeRow(row.key);
     else addCourse(course);
   }
@@ -139,7 +218,8 @@ export function Entry({ id, date, startNow }: { id?: number; date?: string; star
   function submitNew() {
     addCourse(newName);
     setNewName("");
-    setAdding(false);
+    // The "Other" box stays open for another name; the old field closes.
+    if (!withTasks) setAdding(false);
   }
 
   async function save(e: React.FormEvent) {
@@ -150,7 +230,7 @@ export function Entry({ id, date, startNow }: { id?: number; date?: string; star
       date: form.date,
       start: form.start,
       end: form.end,
-      courses: normalizeCourses(rows.map((r) => ({ course: r.course, minutes: Number(r.minutes) }))),
+      courses: rowsToCourses(rows),
       energy: form.energy,
       interruptions: form.interruptions === "" ? null : Number(form.interruptions),
       note: form.note,
@@ -160,6 +240,7 @@ export function Entry({ id, date, startNow }: { id?: number; date?: string; star
     try {
       if (id !== undefined) await api.updateSession(id, body);
       else {
+        // Saving the running block also ends it on the server, in the same request.
         await api.createSession(body);
         if (!kept) clearDraft();
       }
@@ -208,6 +289,129 @@ export function Entry({ id, date, startNow }: { id?: number; date?: string; star
   const yesterday = addDays(today, -1);
   const isNew = id === undefined;
 
+  // Pieces of the "What you studied" step, arranged below by whether tasks can be picked.
+  const rowList = form.rows.length > 0 && (
+    <ul className="course-rows">
+      {form.rows.map((r, i) => {
+        const m = parseMin(r.minutes);
+        // Offer "Fill" where it helps: on empty rows, else on the last row.
+        const anyEmpty = rows.some((x) => !x.minutes);
+        const offerFill = left !== null && left > 0 && (anyEmpty ? !r.minutes : i === form.rows.length - 1);
+        const bad = touched && (m === null || !Number.isInteger(m) || m <= 0);
+        const label = labelOf(r);
+        return (
+          <li key={r.key} className="course-row" data-leaving={leaving.has(r.key) ? "" : undefined}>
+            <div>
+              <div className="cr-inner">
+                {r.task && r.task.subject !== null ? (
+                  <span className="cr-name cr-task">
+                    <span className="cr-title">{r.task.title}</span>
+                    <SubjectChip course={r.course} />
+                  </span>
+                ) : (
+                  <span className="cr-name">
+                    <i className="dot" style={{ ["--c" as string]: courseVar(courseSlot(r.course)) }} />
+                    <span title={label}>{label}</span>
+                  </span>
+                )}
+                <span className="cr-controls">
+                  <span className="stepper" role="group" aria-label={t.entry.minutesGroup(label)}>
+                    <button type="button" aria-label={t.entry.minus(label, STEP)} onClick={() => setRow(r.key, String(Math.max(0, (m ?? 0) - STEP) || ""))}>
+                      <MinusIcon />
+                    </button>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      step={5}
+                      placeholder="0"
+                      aria-label={t.entry.minutesInput(label)}
+                      aria-invalid={bad || undefined}
+                      value={r.minutes}
+                      onChange={(e) => setRow(r.key, e.target.value)}
+                    />
+                    <span className="unit">{t.entry.unit}</span>
+                    <button type="button" aria-label={t.entry.plus(label, STEP)} onClick={() => setRow(r.key, String((m ?? 0) + STEP))}>
+                      <PlusIcon />
+                    </button>
+                  </span>
+                  {offerFill && (
+                    <button type="button" className="btn fill-btn" title={t.entry.fillTitle} onClick={() => setRow(r.key, String((m && m > 0 ? m : 0) + left))}>
+                      {t.entry.fill(left)}
+                    </button>
+                  )}
+                </span>
+                <button type="button" className="cr-remove" aria-label={t.entry.remove(label)} onClick={() => removeRow(r.key)}>
+                  <CloseIcon />
+                </button>
+              </div>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+
+  const chipGroup = (
+    <div className="chips course-chips" role="group" aria-label={t.entry.coursesGroup}>
+      {suggestions.slice(0, 10).map((c) => (
+        <button type="button" key={c} className="chip" aria-pressed={inForm.has(c)} onClick={() => toggleChip(c)}>
+          <i className="dot" style={{ ["--c" as string]: courseVar(courseSlot(c)) }} />
+          {c}
+        </button>
+      ))}
+      {/* Courses added by typing that are not suggestions yet. */}
+      {typedRows
+        .filter((r) => !suggestions.slice(0, 10).includes(r.course))
+        .map((r) => (
+          <button type="button" key={r.key} className="chip" aria-pressed onClick={() => removeRow(r.key)}>
+            <i className="dot" style={{ ["--c" as string]: courseVar(courseSlot(r.course)) }} />
+            {r.course}
+          </button>
+        ))}
+      {!withTasks && !adding && (
+        <button type="button" className="chip" onClick={() => setAdding(true)}>
+          <PlusIcon /> {t.entry.newCourse}
+        </button>
+      )}
+    </div>
+  );
+
+  const nameField = adding && (
+    <div className="add-course">
+      <input
+        ref={newInput}
+        list="course-options"
+        value={newName}
+        maxLength={40}
+        placeholder={t.entry.newCoursePlaceholder}
+        aria-label={t.entry.newCourseLabel}
+        autoComplete="off"
+        onChange={(e) => setNewName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            submitNew();
+          }
+          if (e.key === "Escape") setAdding(false);
+        }}
+      />
+      <datalist id="course-options">
+        {suggestions.map((c) => (
+          <option key={c} value={c} />
+        ))}
+      </datalist>
+      <button type="button" className="btn" onClick={submitNew} disabled={!newName.trim()}>
+        {t.entry.add}
+      </button>
+      {!withTasks && (
+        <button type="button" className="btn btn-ghost" onClick={() => setAdding(false)}>
+          {t.common.cancel}
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <form className="entry narrow" onSubmit={save} noValidate>
       <div className="page-head reveal">
@@ -220,6 +424,7 @@ export function Entry({ id, date, startNow }: { id?: number; date?: string; star
             type="button"
             className="btn btn-ghost btn-sm"
             onClick={() => {
+              // Discarding a running block ends it on every device (see runningStep).
               setForm(emptyDraft(form.date));
               setTouched(false);
             }}
@@ -242,7 +447,7 @@ export function Entry({ id, date, startNow }: { id?: number; date?: string; star
             </a>
           </section>
         ) : (
-          <Stamp form={form} onStart={() => setForm((f) => ({ ...f, date: today, start: localTime(), end: "" }))} onEnd={() => set("end", localTime())} />
+          <Stamp form={form} starting={start.busy} onStart={() => start.tap()} onEnd={() => set("end", localTime())} />
         ))}
 
       <section className="step reveal" style={{ ["--i" as string]: 1 }} aria-labelledby="step-time">
@@ -275,121 +480,63 @@ export function Entry({ id, date, startNow }: { id?: number; date?: string; star
       <section className="step reveal" style={{ ["--i" as string]: 2 }} aria-labelledby="step-courses">
         <h2 className="step-title" id="step-courses">
           {t.entry.stepCourses}
-          <small>{rows.length ? t.entry.courseCount(rows.length) : t.entry.coursesHint}</small>
+          <small>
+            {withTasks
+              ? rows.length
+                ? t.entry.rowCount(rows.length)
+                : t.entry.rowsHint
+              : rows.length
+                ? t.entry.courseCount(rows.length)
+                : t.entry.coursesHint}
+          </small>
         </h2>
 
-        <div className="chips course-chips" role="group" aria-label={t.entry.coursesGroup}>
-          {suggestions.slice(0, 10).map((c) => (
-            <button type="button" key={c} className="chip" aria-pressed={inForm.has(c)} onClick={() => toggleChip(c)}>
-              <i className="dot" style={{ ["--c" as string]: courseVar(courseSlot(c)) }} />
-              {c}
-            </button>
-          ))}
-          {/* Courses added by typing that are not suggestions yet. */}
-          {rows
-            .filter((r) => !suggestions.slice(0, 10).includes(r.course))
-            .map((r) => (
-              <button type="button" key={r.key} className="chip" aria-pressed onClick={() => removeRow(r.key)}>
-                <i className="dot" style={{ ["--c" as string]: courseVar(courseSlot(r.course)) }} />
-                {r.course}
+        {withTasks ? (
+          <>
+            {rowList}
+            {adding ? (
+              <div className="other-box">
+                <div className="other-box-head">
+                  <span>
+                    <Rich text={t.entry.otherHead} />
+                  </span>
+                  <button type="button" className="cr-remove" aria-label={t.entry.closeOther} onClick={() => setAdding(false)}>
+                    <CloseIcon />
+                  </button>
+                </div>
+                {chipGroup}
+                {nameField}
+              </div>
+            ) : (
+              <button type="button" className="chip add-row" onClick={() => setPicking(true)}>
+                <PlusIcon /> {t.entry.addRow}
               </button>
-            ))}
-          {!adding && (
-            <button type="button" className="chip" onClick={() => setAdding(true)}>
-              <PlusIcon /> {t.entry.newCourse}
-            </button>
-          )}
-        </div>
-
-        {adding && (
-          <div className="add-course">
-            <input
-              ref={newInput}
-              list="course-options"
-              value={newName}
-              maxLength={40}
-              placeholder={t.entry.newCoursePlaceholder}
-              aria-label={t.entry.newCourseLabel}
-              autoComplete="off"
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  submitNew();
-                }
-                if (e.key === "Escape") setAdding(false);
-              }}
-            />
-            <datalist id="course-options">
-              {suggestions.map((c) => (
-                <option key={c} value={c} />
-              ))}
-            </datalist>
-            <button type="button" className="btn" onClick={submitNew} disabled={!newName.trim()}>
-              {t.entry.add}
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={() => setAdding(false)}>
-              {t.common.cancel}
-            </button>
-          </div>
-        )}
-
-        {form.rows.length > 0 && (
-          <ul className="course-rows">
-            {form.rows.map((r, i) => {
-              const m = parseMin(r.minutes);
-              // Offer "Fill" where it helps: on empty rows, else on the last row.
-              const anyEmpty = rows.some((x) => !x.minutes);
-              const offerFill = left !== null && left > 0 && (anyEmpty ? !r.minutes : i === form.rows.length - 1);
-              const bad = touched && (m === null || !Number.isInteger(m) || m <= 0);
-              return (
-                <li key={r.key} className="course-row" data-leaving={leaving.has(r.key) ? "" : undefined}>
-                  <div>
-                    <div className="cr-inner">
-                      <span className="cr-name">
-                        <i className="dot" style={{ ["--c" as string]: courseVar(courseSlot(r.course)) }} />
-                        <span title={r.course}>{r.course}</span>
-                      </span>
-                      <span className="cr-controls">
-                        <span className="stepper" role="group" aria-label={t.entry.minutesGroup(r.course)}>
-                          <button type="button" aria-label={t.entry.minus(r.course, STEP)} onClick={() => setRow(r.key, String(Math.max(0, (m ?? 0) - STEP) || ""))}>
-                            <MinusIcon />
-                          </button>
-                          <input
-                            type="number"
-                            inputMode="numeric"
-                            min={1}
-                            step={5}
-                            placeholder="0"
-                            aria-label={t.entry.minutesInput(r.course)}
-                            aria-invalid={bad || undefined}
-                            value={r.minutes}
-                            onChange={(e) => setRow(r.key, e.target.value)}
-                          />
-                          <span className="unit">{t.entry.unit}</span>
-                          <button type="button" aria-label={t.entry.plus(r.course, STEP)} onClick={() => setRow(r.key, String((m ?? 0) + STEP))}>
-                            <PlusIcon />
-                          </button>
-                        </span>
-                        {offerFill && (
-                          <button type="button" className="btn fill-btn" title={t.entry.fillTitle} onClick={() => setRow(r.key, String((m && m > 0 ? m : 0) + left))}>
-                            {t.entry.fill(left)}
-                          </button>
-                        )}
-                      </span>
-                      <button type="button" className="cr-remove" aria-label={t.entry.remove(r.course)} onClick={() => removeRow(r.key)}>
-                        <CloseIcon />
-                      </button>
-                    </div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+            )}
+            {picking && entries && (
+              <TaskPicker
+                entries={entries}
+                sub={t.picker.addSub}
+                onPick={pickTask}
+                onOther={() => {
+                  setPicking(false);
+                  setAdding(true);
+                }}
+                onClose={() => setPicking(false)}
+              />
+            )}
+          </>
+        ) : (
+          <>
+            {/* Until the task list answers, how rows are added is not settled yet. */}
+            {pick.list !== undefined && chipGroup}
+            {nameField}
+            {rowList}
+          </>
         )}
       </section>
 
-      <Meter span={span} rows={rows.map((r) => ({ course: r.course, minutes: minutesOf(r), slot: courseSlot(r.course) }))} focus={focus} left={left} ratio={ratio} />
+      <Meter span={span} rows={rows.map((r) => ({ key: r.key, label: labelOf(r), minutes: minutesOf(r), slot: courseSlot(r.course) }))} focus={focus} left={left} ratio={ratio} />
+      {start.picker}
 
       <details className="entry-more reveal" style={{ ["--i" as string]: 4 }} open={!isNew && (form.energy !== null || form.interruptions !== "" || form.note !== "") ? true : undefined}>
         <summary>
@@ -478,7 +625,7 @@ export function Entry({ id, date, startNow }: { id?: number; date?: string; star
 }
 
 /** One tap when you sit down, one when you stop; the start waits in the draft. */
-function Stamp({ form, onStart, onEnd }: { form: Draft; onStart: () => void; onEnd: () => void }) {
+function Stamp({ form, starting, onStart, onEnd }: { form: Draft; starting: boolean; onStart: () => void; onEnd: () => void }) {
   const t = useT();
   const running = isRunning(form);
   const [, tick] = useState(0);
@@ -490,11 +637,17 @@ function Stamp({ form, onStart, onEnd }: { form: Draft; onStart: () => void; onE
 
   if (running) {
     const elapsed = elapsedMin(form.start, localTime());
+    const first = form.rows[0];
     return (
       <section className="stamp is-running reveal" aria-live="polite">
         <span className="stamp-pulse" aria-hidden="true" />
         <span className="stamp-text">
           <strong>{t.common.running(elapsed)}</strong>
+          {first?.task && (
+            <span className="stamp-task">
+              {first.task.title} {first.task.subject !== null && <SubjectChip course={first.course} />}
+            </span>
+          )}
           <span>{t.entry.stampRunning(form.start)}</span>
         </span>
         <button type="button" className="btn btn-accent" onClick={onEnd}>
@@ -510,8 +663,8 @@ function Stamp({ form, onStart, onEnd }: { form: Draft; onStart: () => void; onE
         <strong>{t.entry.stampIdle}</strong>
         <span>{t.entry.stampIdleSub}</span>
       </span>
-      <button type="button" className="btn btn-accent" onClick={onStart}>
-        {t.common.startStudying}
+      <button type="button" className="btn btn-accent" onClick={onStart} disabled={starting} aria-busy={starting || undefined}>
+        {starting ? t.common.starting : t.common.startStudying}
       </button>
     </section>
   );
@@ -558,7 +711,7 @@ function Meter({
   ratio,
 }: {
   span: number | null;
-  rows: { course: string; minutes: number; slot: number }[];
+  rows: { key: string; label: string; minutes: number; slot: number }[];
   focus: number;
   left: number | null;
   ratio: number | null;
@@ -587,16 +740,16 @@ function Meter({
       </div>
       <div className="meter-bar" aria-hidden="true">
         {filled.map((r) => (
-          <span key={r.course} style={{ width: `${(r.minutes / whole) * 100}%`, ["--c" as string]: courseVar(r.slot) }} />
+          <span key={r.key} style={{ width: `${(r.minutes / whole) * 100}%`, ["--c" as string]: courseVar(r.slot) }} />
         ))}
         {span !== null && !over && <span className="ms-rest" />}
       </div>
       {filled.length > 0 && (
         <div className="legend-row meter-legend">
           {filled.map((r) => (
-            <span key={r.course}>
+            <span key={r.key}>
               <i className="dot" style={{ ["--c" as string]: courseVar(r.slot) }} />
-              {r.course} {fm(r.minutes)}
+              {r.label} {fm(r.minutes)}
             </span>
           ))}
           {left !== null && left > 0 && (

@@ -1,9 +1,13 @@
 import { useMemo, useState } from "react";
-import { courseVar, useData } from "../store";
+import { courseVar, currentDraft, useData } from "../store";
 import { link, navigate } from "../router";
 import { courseColor, useChartTheme } from "../theme";
 import { useWidth } from "../useWidth";
-import { isRunning, readDraft } from "../draft";
+import { isRunning, openDraft, writeDraft, type Draft } from "../draft";
+import { runningOf, startDraft } from "../running";
+import { keyOf } from "../runningSync";
+import { usePickList } from "../usePickList";
+import { SubjectChip, useStartPicker } from "../components/TaskPicker";
 import { Chart } from "../components/LazyChart";
 import { Empty } from "../components/Empty";
 import { Timeline } from "../components/Timeline";
@@ -42,8 +46,39 @@ const RANGES: Range[] = ["30", "90", "all"];
 const sumFocus = (list: Session[]) => list.reduce((a, s) => a + sessionFocus(s), 0);
 
 export function Overview() {
-  const { sessions, settings, loaded, courseSlot } = useData();
+  const { sessions, settings, loaded, courseSlot, running, setRunning, undelivered } = useData();
   const theme = useChartTheme();
+  const draft = currentDraft(running, undelivered);
+  const runningDraft = draft && isRunning(draft) ? draft : null;
+  // "Start studying": ask what for when life-os has a list, else start at once.
+  const start = useStartPicker(usePickList(), (tapped, task) => {
+    const stored = currentDraft(running, undelivered);
+    // A block already open (e.g. an old one never ended) opens as it is, as before.
+    if (!stored?.start) {
+      const d = startDraft(stored, tapped, task);
+      writeDraft(d);
+      // Started from the block this page shows (none): the server refuses it if that is stale.
+      setRunning(runningOf(d), keyOf(running));
+    }
+    navigate("/add");
+  });
+  const startButton = (className: string) => (
+    <a
+      className={className}
+      href="/add?start=now"
+      aria-busy={start.busy || undefined}
+      aria-disabled={start.busy || undefined}
+      onClick={(e) => {
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        // A draft that already has a start (ended unsaved, or days old) opens as it is.
+        if (openDraft(currentDraft(running, undelivered), { startNow: true }).startAt) start.tap();
+        else navigate("/add");
+      }}
+    >
+      {start.busy ? t.common.starting : t.common.startStudying}
+    </a>
+  );
   const t = useT();
   const [range, setRange] = useState<Range>("30");
   const today = localToday();
@@ -115,7 +150,7 @@ export function Overview() {
       <div className="narrow">
         <h1 className="page-title reveal">{t.overview.emptyTitle}</h1>
         <div className="reveal" style={{ ["--i" as string]: 1 }}>
-          <RunningBanner />
+          <RunningBanner draft={runningDraft} />
           <Empty title={t.overview.emptyHeading}>{t.overview.emptyBody}</Empty>
         </div>
       </div>
@@ -130,7 +165,7 @@ export function Overview() {
 
   return (
     <div className="overview">
-      <RunningBanner />
+      <RunningBanner draft={runningDraft} />
       <section className="hero" aria-label={t.overview.todayLabel}>
         <div className="reveal">
           <span className="hero-date">{t.overview.heroDate(today)}</span>
@@ -153,13 +188,7 @@ export function Overview() {
           <span className="hero-timeline">
             <Timeline sessions={kpi.todayList} previous={kpi.yesterdayList} compact />
           </span>
-          {!kpi.todayList.length && !hasRunning() && (
-            <div className="hero-actions">
-              <a className="btn btn-accent" {...link("/add?start=now")}>
-                {t.common.startStudying}
-              </a>
-            </div>
-          )}
+          {!kpi.todayList.length && !runningDraft && <div className="hero-actions">{startButton("btn btn-accent")}</div>}
         </div>
 
         <dl className="kpi-list reveal" style={{ ["--i" as string]: 1 }}>
@@ -243,27 +272,26 @@ export function Overview() {
           />
         </section>
       </div>
+      {start.picker}
     </div>
   );
 }
 
-function runningDraft() {
-  const d = readDraft();
-  return d && isRunning(d) ? d : null;
-}
-
-const hasRunning = () => runningDraft() !== null;
-
-/** A started-but-not-ended block from the entry draft. */
-function RunningBanner() {
+/** The block in progress, on whichever device it was started, with the task it is for. */
+function RunningBanner({ draft: d }: { draft: Draft | null }) {
   const t = useT();
-  const d = runningDraft();
   if (!d) return null;
+  const task = d.rows[0]?.task;
   return (
     <a className="stamp is-running reveal" style={{ marginBottom: 32, textDecoration: "none", color: "inherit" }} {...link("/add")}>
       <span className="stamp-pulse" aria-hidden="true" />
       <span className="stamp-text">
         <strong>{t.common.running(elapsedMin(d.start, localTime()))}</strong>
+        {task && (
+          <span className="stamp-task">
+            {task.title} {task.subject !== null && <SubjectChip course={d.rows[0].course} />}
+          </span>
+        )}
         <span>{t.overview.runningSub(d.start)}</span>
       </span>
       <span className="btn btn-accent">{t.common.end}</span>
