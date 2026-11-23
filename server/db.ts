@@ -13,10 +13,24 @@ export type Session = {
   note: string;
 };
 
-// Roughly how long one course was actually studied inside a session.
-export type CourseTime = { course: string; minutes: number };
+// A life-os task as it was when picked; life-os may rename or delete it later.
+export type Task = { id: string; title: string; subject: string | null };
+
+// Roughly how long one course was actually studied inside a session. A row
+// picked from life-os carries its task; a typed row has task null. The course
+// is what per-course statistics group by.
+export type CourseTime = { course: string; minutes: number; task: Task | null };
+
+// A row without minutes: what a running block is being spent on.
+export type Entry = { course: string; task: Task | null };
 
 export type SessionInput = Omit<Session, "id">;
+
+// The study block in progress, at most one. Its entry is null until picked.
+export type Running = { date: string; start: string; entry: Entry | null };
+
+/** Which running block a write expects: its date and start. */
+export type RunningKey = { date: string; start: string };
 
 export type Settings = {
   dailyGoalMin: number; // target focus minutes per day
@@ -30,7 +44,7 @@ export type Language = (typeof LANGUAGES)[number];
 const DEFAULT_SETTINGS: Settings = { dailyGoalMin: 240, targetRatio: 0.75, language: "en" };
 
 // Each entry upgrades the schema by one version; never edit a shipped entry.
-const MIGRATIONS = [
+export const MIGRATIONS = [
   `CREATE TABLE sessions (
      id INTEGER PRIMARY KEY,
      date TEXT NOT NULL,
@@ -60,6 +74,20 @@ const MIGRATIONS = [
      FROM sessions WHERE focus_min > 0;
    ALTER TABLE sessions DROP COLUMN focus_min;
    ALTER TABLE sessions DROP COLUMN category;`,
+  // A row can be for a life-os task, kept as it was when picked. The running
+  // block moves from the browser into the database.
+  `ALTER TABLE session_courses ADD COLUMN task_id TEXT;
+   ALTER TABLE session_courses ADD COLUMN task_title TEXT;
+   ALTER TABLE session_courses ADD COLUMN task_subject TEXT;
+   CREATE TABLE running (
+     id INTEGER PRIMARY KEY CHECK (id = 1),
+     date TEXT NOT NULL,
+     start TEXT NOT NULL,
+     course TEXT,
+     task_id TEXT,
+     task_title TEXT,
+     task_subject TEXT
+   );`,
 ];
 
 export function openDb(dataDir: string) {
@@ -91,6 +119,18 @@ type Row = {
   note: string;
 };
 
+// A row of session_courses or running, with the task spread over columns.
+type TaskColumns = { task_id: string | null; task_title: string | null; task_subject: string | null };
+
+const toTask = (r: TaskColumns): Task | null =>
+  r.task_id === null ? null : { id: r.task_id, title: r.task_title ?? "", subject: r.task_subject };
+
+const taskColumns = (task: Task | null) => [task?.id ?? null, task?.title ?? null, task?.subject ?? null] as const;
+
+type CourseRow = TaskColumns & { session_id: number; course: string; minutes: number };
+
+const toCourseTime = (r: CourseRow): CourseTime => ({ course: r.course, minutes: r.minutes, task: toTask(r) });
+
 const toSession = (r: Row, courses: CourseTime[]): Session => ({
   id: r.id,
   date: r.date,
@@ -107,11 +147,13 @@ export function createStore(db: DatabaseSync) {
     "SELECT * FROM sessions WHERE date >= ? AND date <= ? ORDER BY date, start, id",
   );
   const listCourses = db.prepare(
-    `SELECT c.session_id, c.course, c.minutes FROM session_courses c JOIN sessions s ON s.id = c.session_id
+    `SELECT c.session_id, c.course, c.minutes, c.task_id, c.task_title, c.task_subject FROM session_courses c JOIN sessions s ON s.id = c.session_id
      WHERE s.date >= ? AND s.date <= ? ORDER BY c.session_id, c.position`,
   );
   const get = db.prepare("SELECT * FROM sessions WHERE id = ?");
-  const getCourses = db.prepare("SELECT course, minutes FROM session_courses WHERE session_id = ? ORDER BY position");
+  const getCourses = db.prepare(
+    "SELECT course, minutes, task_id, task_title, task_subject FROM session_courses WHERE session_id = ? ORDER BY position",
+  );
   const insert = db.prepare(
     `INSERT INTO sessions (date, start, end, energy, interruptions, note)
      VALUES (?, ?, ?, ?, ?, ?)`,
@@ -123,25 +165,36 @@ export function createStore(db: DatabaseSync) {
   );
   const remove = db.prepare("DELETE FROM sessions WHERE id = ?");
   const insertCourse = db.prepare(
-    "INSERT INTO session_courses (session_id, position, course, minutes) VALUES (?, ?, ?, ?)",
+    `INSERT INTO session_courses (session_id, position, course, minutes, task_id, task_title, task_subject)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
   );
   const clearCourses = db.prepare("DELETE FROM session_courses WHERE session_id = ?");
-  // Renaming onto a course the session already has merges the two entries.
+  // Renaming onto a course the session already has merges the two entries,
+  // but only typed rows (task_id NULL) merge: a task row keeps its own row.
   const mergeCourse = db.prepare(
     `UPDATE session_courses AS t SET minutes = t.minutes + f.minutes
      FROM session_courses AS f
-     WHERE t.course = ?2 AND f.course = ?1 AND f.session_id = t.session_id`,
+     WHERE t.course = ?2 AND f.course = ?1 AND f.session_id = t.session_id
+       AND t.task_id IS NULL AND f.task_id IS NULL`,
   );
   const dropMerged = db.prepare(
-    `DELETE FROM session_courses WHERE course = ?1
-     AND session_id IN (SELECT session_id FROM session_courses WHERE course = ?2)`,
+    `DELETE FROM session_courses WHERE course = ?1 AND task_id IS NULL
+     AND session_id IN (SELECT session_id FROM session_courses WHERE course = ?2 AND task_id IS NULL)`,
   );
+  // Renames typed and task rows alike; the task_* columns stay as picked.
   const renameCourse = db.prepare("UPDATE session_courses SET course = ?2 WHERE course = ?1");
   const courseSummary = db.prepare(
-    `SELECT course, COUNT(*) AS sessions, SUM(minutes) AS minutes, MAX(s.date) AS lastDate
+    `SELECT course, COUNT(DISTINCT c.session_id) AS sessions, SUM(minutes) AS minutes, MAX(s.date) AS lastDate
      FROM session_courses c JOIN sessions s ON s.id = c.session_id
      GROUP BY course ORDER BY sessions DESC, course`,
   );
+  const readRunning = db.prepare("SELECT * FROM running WHERE id = 1");
+  const writeRunning = db.prepare(
+    `INSERT OR REPLACE INTO running (id, date, start, course, task_id, task_title, task_subject)
+     VALUES (1, ?, ?, ?, ?, ?, ?)`,
+  );
+  // Saving the running block as a session ends it.
+  const endRunning = db.prepare("DELETE FROM running WHERE date = ? AND start = ?");
   const readSettings = db.prepare("SELECT key, value FROM settings");
   const writeSetting = db.prepare(
     "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
@@ -163,12 +216,12 @@ export function createStore(db: DatabaseSync) {
 
   const writeCourses = (id: number | bigint, courses: CourseTime[]) => {
     clearCourses.run(id);
-    courses.forEach((c, i) => insertCourse.run(id, i, c.course, c.minutes));
+    courses.forEach((c, i) => insertCourse.run(id, i, c.course, c.minutes, ...taskColumns(c.task)));
   };
 
   const read = (id: number | bigint) => {
     const row = get.get(id) as Row | undefined;
-    return row ? toSession(row, getCourses.all(id) as CourseTime[]) : null;
+    return row ? toSession(row, (getCourses.all(id) as CourseRow[]).map(toCourseTime)) : null;
   };
 
   const insertSession = (s: SessionInput) => {
@@ -180,15 +233,22 @@ export function createStore(db: DatabaseSync) {
   return {
     listSessions(from = "0000-01-01", to = "9999-12-31") {
       const courses = new Map<number, CourseTime[]>();
-      for (const c of listCourses.all(from, to) as (CourseTime & { session_id: number })[]) {
+      for (const c of listCourses.all(from, to) as CourseRow[]) {
         const list = courses.get(c.session_id) ?? [];
-        list.push({ course: c.course, minutes: c.minutes });
+        list.push(toCourseTime(c));
         courses.set(c.session_id, list);
       }
       return (list.all(from, to) as Row[]).map((r) => toSession(r, courses.get(r.id) ?? []));
     },
+    // A session with the running block's date and start is that block saved, so it ends.
     createSession(s: SessionInput) {
-      return read(transaction(() => insertSession(s)))!;
+      return read(
+        transaction(() => {
+          const id = insertSession(s);
+          endRunning.run(s.date, s.start);
+          return id;
+        }),
+      )!;
     },
     updateSession(id: number, s: SessionInput) {
       const changed = transaction(() => {
@@ -218,6 +278,30 @@ export function createStore(db: DatabaseSync) {
         return Number(merged) + Number(renameCourse.run(from, to).changes);
       });
     },
+    getRunning(): Running | null {
+      const r = readRunning.get() as (TaskColumns & { date: string; start: string; course: string | null }) | undefined;
+      if (!r) return null;
+      return { date: r.date, start: r.start, entry: r.course === null ? null : { course: r.course, task: toTask(r) } };
+    },
+    // Compare-and-set: writes only when the stored block (null: none) is
+    // `expected`, so a stale view never overwrites or ends a newer block.
+    // Answers whether it wrote, and the block stored afterwards.
+    setRunning(r: Running, expected: RunningKey | null) {
+      return transaction(() => {
+        if (!isRunningKey(this.getRunning(), expected)) return { ok: false, running: this.getRunning() };
+        writeRunning.run(r.date, r.start, r.entry?.course ?? null, ...taskColumns(r.entry?.task ?? null));
+        return { ok: true, running: this.getRunning() };
+      });
+    },
+    // Ends the block with this date and start; true also when none is stored.
+    clearRunning(block: RunningKey) {
+      return transaction(() => {
+        const stored = this.getRunning();
+        if (stored && !isRunningKey(stored, block)) return { ok: false, running: stored };
+        endRunning.run(block.date, block.start);
+        return { ok: true, running: null };
+      });
+    },
     getSettings(): Settings {
       const stored = Object.fromEntries(
         (readSettings.all() as { key: string; value: string }[]).map((r) => [r.key, JSON.parse(r.value)]),
@@ -233,3 +317,6 @@ export function createStore(db: DatabaseSync) {
 }
 
 export type Store = ReturnType<typeof createStore>;
+
+const isRunningKey = (r: RunningKey | null, key: RunningKey | null) =>
+  r === null || key === null ? r === key : r.date === key.date && r.start === key.start;

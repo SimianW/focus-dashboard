@@ -93,7 +93,9 @@ export const zh: Messages = {
     focusRate: "专注率",
     rest: "分心或休息",
     today: "今天",
+    starting: "正在开始…",
     running: (min) => `学习中，${min < 1 ? "刚开始" : `已经 ${minutes(min)}`}`,
+    runningChanged: "这段学习已在另一台设备上改动",
   },
 
   login: {
@@ -180,6 +182,11 @@ export const zh: Messages = {
     total: (span) => `共 ${span}`,
     stepCourses: "学了什么",
     courseCount: (n) => `${n} 门`,
+    rowCount: (n) => `${n} 项`,
+    rowsHint: "做了几件事就加几项，大概的分钟数就行",
+    addRow: "添加一项",
+    otherHead: "**其他**：点选课程或输入名称",
+    closeOther: "关闭",
     coursesHint: "点课程添加，大概的分钟数就行",
     coursesGroup: "课程",
     newCourse: "新课程",
@@ -222,6 +229,19 @@ export const zh: Messages = {
     setNow: (label) => `${label}时间设为现在`,
     meter: "这段学习的概况",
     overNote: (extra) => `课程合计比这段时间多了 ${extra}，减一点或者把结束时间往后调。`,
+  },
+
+  picker: {
+    title: "你在做什么？",
+    startSub: "选一项，开始计时。",
+    addSub: "给这段学习添加一项。",
+    close: "关闭",
+    tasks: "任务",
+    other: "其他",
+    otherSub: "不在列表里的事",
+    today: "今天",
+    inBlock: "已在这段学习中，点一下移除",
+    due: (d) => (d.soon ? `${WEEKDAYS[weekday(d.date)]} ${d.time} 截止` : `${Number(d.date.slice(5, 7))} 月 ${Number(d.date.slice(8))} 日截止`),
   },
 
   records: {

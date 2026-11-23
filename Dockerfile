@@ -23,7 +23,7 @@ COPY package.json ./
 COPY --from=deps /app/node_modules ./node_modules
 COPY server/ ./server/
 COPY --from=web /app/web/dist ./web/dist
-RUN rm -f server/*.test.ts server/tsconfig.json && mkdir /data && chown node:node /data
+RUN rm -f server/*.test.ts server/testing.ts server/tsconfig.json && mkdir /data && chown node:node /data
 USER node
 VOLUME /data
 EXPOSE 3000

@@ -304,6 +304,16 @@ describe("courses", () => {
     expect(a.ratio).toBeCloseTo(harmonic);
   });
 
+  it("counts a block once per course, even with two rows of that course", () => {
+    const twoRows = s("2026-04-03", "09:00", "11:00", 0, {
+      courses: [
+        { course: "A", minutes: 30, task: { id: "t1", title: "A1", subject: "A" } },
+        { course: "A", minutes: 20, task: null },
+      ],
+    });
+    expect(courseStats([b1, twoRows]).courses.find((c) => c.course === "A")).toMatchObject({ minutes: 90, blocks: 2 });
+  });
+
   it("attributed spans plus unattributed span add up to the total span", () => {
     const { courses, unattributedSpan } = courseStats([b1, b2, b3]);
     expect(courses.reduce((x, c) => x + c.span, 0) + unattributedSpan).toBeCloseTo(270);

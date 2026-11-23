@@ -2,7 +2,18 @@
 // "YYYY-MM-DD" strings: calendar dates are handled as day numbers so local
 // dates never shift through a time zone.
 
-export type CourseTime = { course: string; minutes: number };
+/** A life-os task as it was when picked; life-os may rename or delete it later. */
+export type Task = { id: string; title: string; subject: string | null };
+
+/**
+ * Roughly how long one course was studied inside a session. A row picked from
+ * life-os carries its task; a typed row has task null (or none, before tasks).
+ * Statistics group by course either way.
+ */
+export type CourseTime = { course: string; minutes: number; task?: Task | null };
+
+/** A row as the API takes it: typed by name, or a task (course derived by the server). */
+export type CourseInput = { course: string; minutes: number } | { task: Task; course?: string; minutes: number };
 
 /** A study block: one start–end span, its focused minutes split across courses. */
 export type Session = {
@@ -10,14 +21,14 @@ export type Session = {
   date: string; // YYYY-MM-DD, the day the session started
   start: string; // HH:MM
   end: string; // HH:MM; at or before start means it crossed midnight
-  courses: CourseTime[]; // each course once; the minutes sum to the focus time
+  courses: CourseTime[]; // a typed course once, a task once; the minutes sum to the focus time
 
   energy: number | null;
   interruptions: number | null;
   note: string;
 };
 
-export type SessionInput = Omit<Session, "id">;
+export type SessionInput = Omit<Session, "id" | "courses"> & { courses: CourseInput[] };
 
 export type Language = "en" | "zh";
 
@@ -346,7 +357,7 @@ export function apportion(s: Session): { course: string; minutes: number; span: 
 
 /** Per-course totals, most minutes first, plus the span no course can claim. */
 export function courseStats(sessions: readonly Session[]): { courses: CourseStat[]; unattributedSpan: number } {
-  const acc = new Map<string, { minutes: number; span: number; blocks: number; days: Set<string>; lastDate: string }>();
+  const acc = new Map<string, { minutes: number; span: number; blocks: Set<Session>; days: Set<string>; lastDate: string }>();
   let unattributedSpan = 0;
   let total = 0;
   for (const s of sessions) {
@@ -354,10 +365,10 @@ export function courseStats(sessions: readonly Session[]): { courses: CourseStat
     if (!parts.length) unattributedSpan += sessionSpan(s);
     for (const p of parts) {
       if (p.minutes <= 0) continue;
-      const a = acc.get(p.course) ?? { minutes: 0, span: 0, blocks: 0, days: new Set<string>(), lastDate: s.date };
+      const a = acc.get(p.course) ?? { minutes: 0, span: 0, blocks: new Set<Session>(), days: new Set<string>(), lastDate: s.date };
       a.minutes += p.minutes;
       a.span += p.span;
-      a.blocks++;
+      a.blocks.add(s);
       a.days.add(s.date);
       if (s.date > a.lastDate) a.lastDate = s.date;
       acc.set(p.course, a);
@@ -370,7 +381,7 @@ export function courseStats(sessions: readonly Session[]): { courses: CourseStat
       minutes: a.minutes,
       span: a.span,
       ratio: a.span > 0 ? a.minutes / a.span : null,
-      blocks: a.blocks,
+      blocks: a.blocks.size,
       days: a.days.size,
       lastDate: a.lastDate,
       share: total > 0 ? a.minutes / total : 0,

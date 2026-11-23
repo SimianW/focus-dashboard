@@ -1,29 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createApp } from "./app.ts";
-import { createAuth } from "./auth.ts";
-import { createStore, openDb } from "./db.ts";
+import { setup } from "./testing.ts";
 import { spanMinutes } from "./validate.ts";
 
-function setup() {
-  const store = createStore(openDb(mkdtempSync(join(tmpdir(), "focus-test-"))));
-  const app = createApp(store, createAuth("correct horse", false));
-  let cookie = "";
-  const call = async (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) => {
-    const res = await app.request(path, {
-      method,
-      headers: { cookie, ...(body === undefined ? {} : { "content-type": "application/json" }), ...headers },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    const set = res.headers.get("set-cookie");
-    if (set) cookie = set.split(";")[0];
-    return { status: res.status, json: res.status === 204 ? null : await res.json() };
-  };
-  return { call, login: () => call("POST", "/api/login", { password: "correct horse" }) };
-}
+// Rows as the API returns them: typed rows carry task null.
+const typed = (courses: { course: string; minutes: number }[]) => courses.map((c) => ({ ...c, task: null }));
 
 const session = {
   date: "2026-10-20",
@@ -75,11 +56,11 @@ test("sessions can be created, listed by range, updated and deleted", async () =
   const ranged = await call("GET", "/api/sessions?from=2026-10-21&to=2026-10-31");
   assert.deepEqual(ranged.json.map((s: { date: string }) => s.date), ["2026-10-22"]);
 
-  assert.deepEqual(created.json.courses, session.courses);
+  assert.deepEqual(created.json.courses, typed(session.courses));
 
   const courses = [{ course: "物理", minutes: 80 }];
   const updated = await call("PUT", `/api/sessions/${created.json.id}`, { ...session, courses, energy: 4 });
-  assert.deepEqual(updated.json.courses, courses);
+  assert.deepEqual(updated.json.courses, typed(courses));
   assert.equal(updated.json.energy, 4);
 
   assert.equal((await call("DELETE", `/api/sessions/${created.json.id}`)).status, 204);
@@ -120,7 +101,7 @@ test("import upgrades version 1 sessions", async () => {
   ];
   assert.equal((await call("POST", "/api/import", { sessions: legacy })).json.imported, 3);
   const listed = (await call("GET", "/api/sessions")).json.map((s: { courses: unknown }) => s.courses);
-  assert.deepEqual(listed, [[{ course: "数学", minutes: 70 }], [{ course: "未分类", minutes: 30 }], []]);
+  assert.deepEqual(listed, [typed([{ course: "数学", minutes: 70 }]), typed([{ course: "未分类", minutes: 30 }]), []]);
 });
 
 test("duplicate courses in a session merge, and renaming merges too", async () => {
@@ -133,12 +114,12 @@ test("duplicate courses in a session merge, and renaming merges too", async () =
       { course: "数学 ", minutes: 10 },
     ],
   });
-  assert.deepEqual(dup.json.courses, [{ course: "数学", minutes: 40 }]);
+  assert.deepEqual(dup.json.courses, typed([{ course: "数学", minutes: 40 }]));
   await call("POST", "/api/sessions", session);
 
   assert.equal((await call("POST", "/api/courses/rename", { from: "英语", to: "数学" })).json.updated, 1);
   const listed = (await call("GET", "/api/sessions")).json.map((s: { courses: unknown }) => s.courses);
-  assert.deepEqual(listed, [[{ course: "数学", minutes: 40 }], [{ course: "数学", minutes: 70 }]]);
+  assert.deepEqual(listed, [typed([{ course: "数学", minutes: 40 }]), typed([{ course: "数学", minutes: 70 }])]);
   const courses = (await call("GET", "/api/courses")).json;
   assert.deepEqual(courses, [{ course: "数学", sessions: 2, minutes: 110, lastDate: "2026-10-20" }]);
 });

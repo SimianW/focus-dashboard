@@ -104,8 +104,12 @@ export const en = {
     focusRate: "Focus rate",
     rest: "Distracted or resting",
     today: "Today",
+    /** "Start studying" while the task list is still on its way. */
+    starting: "Starting…",
     /** Banner while a block is running. */
     running: (min: number) => (min < 1 ? "Studying, just started" : `Studying for ${minutes(min)}`),
+    /** Toast when another device changed the running block first; the page then shows that block. */
+    runningChanged: "This block changed on another device",
   },
 
   login: {
@@ -199,6 +203,13 @@ export const en = {
     total: (span: string) => `${span} in total`,
     stepCourses: "What you studied",
     courseCount: (n: number) => plural(n, "course"),
+    /** With the life-os task list: the rows are tasks or typed names. */
+    rowCount: (n: number) => plural(n, "row"),
+    rowsHint: "Add a row for each thing you worked on; rough minutes are fine",
+    addRow: "Add a row",
+    /** rich */
+    otherHead: "**Other**: tap a course or type a name",
+    closeOther: "Close",
     coursesHint: "Tap a course to add it; rough minutes are fine",
     coursesGroup: "Courses",
     newCourse: "New course",
@@ -244,6 +255,22 @@ export const en = {
     setNow: (label: string) => `Set ${label.toLowerCase()} time to now`,
     meter: "Summary of this block",
     overNote: (extra: string) => `The courses add up to ${extra} more than the block. Trim them or move the end time later.`,
+  },
+
+  picker: {
+    title: "What are you working on?",
+    startSub: "Pick one to start the clock.",
+    addSub: "Add a row to this block.",
+    close: "Close",
+    tasks: "Tasks",
+    other: "Other",
+    otherSub: "Something not on the list",
+    /** Tag on a task life-os has planned for today. */
+    today: "Today",
+    /** A ticked task: it already has a row; tapping removes it. */
+    inBlock: "In this block, tap to remove",
+    due: (d: { date: string; time: string; soon: boolean }) =>
+      d.soon ? `Due ${WEEKDAYS[weekday(d.date)]} ${d.time}` : `Due ${MONTHS_SHORT[Number(d.date.slice(5, 7)) - 1]} ${Number(d.date.slice(8))}`,
   },
 
   records: {

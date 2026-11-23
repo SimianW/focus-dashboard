@@ -44,8 +44,8 @@ export function Timeline({
           const courses = s.courses.map((c) => `${c.course} ${t.fmt.minutes(c.minutes)}`);
           const title = t.timeline.block(s.start, s.end, courses, formatPct(sessionRatio(s)), tail);
           const style = { left: `${(from / DAY) * 100}%`, width: `max(3px, ${((to - from) / DAY) * 100}%)` };
-          const inner = s.courses.map((c) => (
-            <span key={c.course} className="tl-seg" style={{ height: `${(c.minutes / span) * 100}%`, ["--c" as string]: courseVar(courseSlot(c.course)) }} />
+          const inner = s.courses.map((c, i) => (
+            <span key={i} className="tl-seg" style={{ height: `${(c.minutes / span) * 100}%`, ["--c" as string]: courseVar(courseSlot(c.course)) }} />
           ));
           return onSelect && !tail ? (
             <button key={`${s.id}${tail}`} type="button" className="tl-block" style={style} title={title} aria-label={t.timeline.edit(title)} onClick={() => onSelect(s)}>
