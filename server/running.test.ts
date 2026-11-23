@@ -68,12 +68,12 @@ test("saving the running block as a session ends it in the same request; another
   const session = { date: "2026-11-21", end: "15:00", courses: [{ course: "Reading", minutes: 40 }] };
 
   assert.equal((await call("POST", "/api/sessions", { ...session, start: "14:00" })).status, 201);
-  assert.deepEqual((await call("GET", "/api/snapshot")).json.running, running);
+  assert.deepEqual((await call("GET", "/api/running")).json, running);
   assert.equal((await call("POST", "/api/sessions", { ...session, date: "2026-11-20", start: "14:05" })).status, 201);
-  assert.deepEqual((await call("GET", "/api/snapshot")).json.running, running);
+  assert.deepEqual((await call("GET", "/api/running")).json, running);
 
   assert.equal((await call("POST", "/api/sessions", { ...session, start: "14:05" })).status, 201);
-  assert.equal((await call("GET", "/api/snapshot")).json.running, null);
+  assert.equal((await call("GET", "/api/running")).json, null);
 });
 
 // Every write names the block the page believes the server holds, so a stale

@@ -4,7 +4,7 @@ import { getCookie } from "hono/cookie";
 import { serveStatic } from "@hono/node-server/serve-static";
 import type { Store } from "./db.ts";
 import type { createAuth } from "./auth.ts";
-import { fetchPickList, type LifeosConfig } from "./lifeos.ts";
+import { fetchPickList, lifeosSessions, type LifeosConfig } from "./lifeos.ts";
 import { BadRequest, parseCourseName, parseRunningKey, parseRunningWrite, parseSession, parseSettings, upgradeLegacySession } from "./validate.ts";
 
 type Auth = ReturnType<typeof createAuth>;
@@ -36,7 +36,7 @@ function readTokenMatches(header: string | undefined, readToken: string | undefi
 
 export type AppOptions = {
   staticDir?: string; // built web app to serve
-  readToken?: string; // bearer token that may only read GET /api/snapshot
+  readToken?: string; // bearer token that may only read GET /api/lifeos/sessions
   lifeos?: LifeosConfig; // where the pick list of tasks comes from
 };
 
@@ -66,11 +66,11 @@ export function createApp(store: Store, auth: Auth, { staticDir, readToken, life
   });
 
   // Everything below requires a signed session cookie, except that life-os
-  // may read GET /api/snapshot with the read-only token and nothing more.
+  // may read GET /api/lifeos/sessions with the read-only token and nothing more.
   app.use("/api/*", async (c, next) => {
     if (auth.verify(getCookie(c, auth.cookieName))) return next();
     if (readTokenMatches(c.req.header("authorization"), readToken)) {
-      if (c.req.method === "GET" && c.req.path === "/api/snapshot") return next();
+      if (c.req.method === "GET" && c.req.path === "/api/lifeos/sessions") return next();
       return c.json({ error: "read-only token" }, 403);
     }
     return c.json({ error: "unauthorized" }, 401);
@@ -91,8 +91,8 @@ export function createApp(store: Store, auth: Auth, { staticDir, readToken, life
     store.deleteSession(Number(c.req.param("id"))) ? c.body(null, 204) : c.json({ error: "not found" }, 404),
   );
 
-  // Everything life-os reads: every study block and the one in progress.
-  app.get("/api/snapshot", (c) => c.json({ sessions: store.listSessions(), running: store.getRunning() }));
+  // Everything life-os reads: every study block and the one in progress (lifeosSessions).
+  app.get("/api/lifeos/sessions", (c) => c.json(lifeosSessions(store.listSessions(), store.getRunning())));
 
   app.get("/api/running", (c) => c.json(store.getRunning()));
 

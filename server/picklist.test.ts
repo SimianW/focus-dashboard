@@ -79,6 +79,24 @@ test("pick list comes from life-os in its order, with malformed entries dropped"
   }
 });
 
+test("pick list takes the settled contract's example as life-os serves it, cross-listed subject included", async () => {
+  // The example in focus-dashboard issue 2 ("Settled shapes"), plus a cross-listed subject.
+  const example = [
+    { id: "3", title: "论文", subject: null, deadline: "2026-12-01T12:00:00-05:00", hasBlockToday: true },
+    { id: "1", title: "作业 1", subject: "CS 341", deadline: "2026-12-05T23:59:00-05:00", hasBlockToday: false },
+    { id: "7", title: "Project", subject: "CS 341 / CO 342", deadline: "2026-12-10T09:00:00-05:00", hasBlockToday: false },
+  ];
+  const lifeos = await fakeLifeos(sendJson(example));
+  try {
+    const { call, login } = setup({ lifeos: { url: lifeos.url, token: TOKEN } });
+    await login();
+    assert.deepEqual((await call("GET", "/api/pick-list")).json, { available: true, tasks: example });
+    assert.deepEqual(lifeos.seen, [{ path: "/api/pick-list", authorization: `Bearer ${TOKEN}` }]);
+  } finally {
+    await lifeos.close();
+  }
+});
+
 // Calls the pick list against a life-os config and returns the JSON and what was logged.
 async function pickListWith(lifeos: { url: string; token: string; timeoutMs?: number }) {
   const { call, login } = setup({ lifeos });
