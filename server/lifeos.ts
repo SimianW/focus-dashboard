@@ -1,6 +1,7 @@
-// Client for life-os, which serves the list of tasks a study block can be for.
+// Focus's side of life-os: the list of tasks a study block can be for, which Focus fetches
+// from life-os, and the study blocks life-os reads from Focus (focus-dashboard issue 2).
 import { parseTask } from "./validate.ts";
-import type { Task } from "./db.ts";
+import type { CourseTime, Running, Session, Task } from "./db.ts";
 
 export type LifeosConfig = { url?: string; token?: string; timeoutMs?: number };
 
@@ -54,4 +55,45 @@ export async function fetchPickList(config: LifeosConfig = {}): Promise<PickList
   }
   if (!Array.isArray(body)) return unavailable("the answer is not a JSON array");
   return { available: true, tasks: body.map(parsePickTask).filter((t) => t !== null) };
+}
+
+// ---- What life-os reads: GET /api/lifeos/sessions ----
+
+// A row as life-os reads it: the picked task's id, title and subject as they were when
+// picked, or for a row with no task (typed, "Other", or from before tasks) the typed name.
+export type LifeosRow = { taskId: string | null; title: string; subject: string | null; minutes: number };
+
+export type LifeosSessions = {
+  sessions: { id: number; date: string; start: string; end: string; rows: LifeosRow[] }[];
+  inProgress: {
+    id: string;
+    date: string;
+    start: string;
+    studying: Omit<LifeosRow, "minutes"> | null;
+    rows: LifeosRow[];
+  } | null;
+};
+
+const picked = ({ course, task }: { course: string; task: Task | null }) => ({
+  taskId: task?.id ?? null,
+  title: task?.title ?? course,
+  subject: task?.subject ?? null,
+});
+
+const lifeosRow = (row: CourseTime): LifeosRow => ({ ...picked(row), minutes: row.minutes });
+
+/** Focus's study blocks, in the order given, and the one in progress, in the shape life-os reads. */
+export function lifeosSessions(sessions: Session[], running: Running | null): LifeosSessions {
+  return {
+    sessions: sessions.map(({ id, date, start, end, courses }) => ({ id, date, start, end, rows: courses.map(lifeosRow) })),
+    // The running block has no id of its own; its date and start name it. It has no minutes
+    // until it is saved as a study block.
+    inProgress: running && {
+      id: `running:${running.date}T${running.start}`,
+      date: running.date,
+      start: running.start,
+      studying: running.entry && picked(running.entry),
+      rows: [],
+    },
+  };
 }

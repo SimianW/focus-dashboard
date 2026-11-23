@@ -48,9 +48,9 @@ pnpm -C web test && pnpm -C web typecheck
 | `DATA_DIR`      | `./data`    | Where `focus.db` lives.                                       |
 | `COOKIE_SECURE` | `true`      | Set to `false` only for plain-HTTP local development.         |
 | `STATIC_DIR`    | (none)      | Built web app to serve; the Docker image sets it.             |
-| `READ_TOKEN`    | (none)      | Optional bearer token, at least 32 characters, that can only read `GET /api/snapshot` (for life-os). |
-| `LIFEOS_URL`    | (none)      | Base URL of life-os; Focus fetches `<LIFEOS_URL>/api/pick-list` for the task pick list. |
-| `LIFEOS_TOKEN`  | (none)      | Bearer token Focus sends to life-os. Without it or `LIFEOS_URL` the pick list is unavailable. |
+| `READ_TOKEN`    | (none)      | Optional bearer token, at least 32 characters, for life-os. It opens only `GET /api/lifeos/sessions`; any other request with it gets `403`. life-os keeps the same value as `FOCUS_READ_TOKEN`. |
+| `LIFEOS_URL`    | (none)      | Base URL of life-os, `http://life-os:8080` on the shared network; Focus fetches `<LIFEOS_URL>/api/pick-list` for the task pick list. |
+| `LIFEOS_TOKEN`  | (none)      | Bearer token Focus sends to life-os: the value of life-os's `LIFEOS_PICKLIST_TOKEN`. Without it or `LIFEOS_URL` the pick list is unavailable. |
 | `PORT`, `HOST`  | `3000`, `0.0.0.0` | Listen address.                                         |
 
 An empty value counts as unset. With life-os unset or unreachable, Focus works as before: names are typed by hand.
@@ -62,3 +62,15 @@ An empty value counts as unset. With life-os unset or unreachable, Focus works a
 ```sh
 ./deploy/deploy.sh
 ```
+
+### With life-os
+
+The two stacks share the external Docker network `life-os-focus`; `deploy/deploy.sh` creates it when it is missing. On it, Focus answers as `focus` (port 3000) and life-os as `life-os` (port 8080). Add to `deploy/.env`:
+
+```sh
+LIFEOS_URL=http://life-os:8080
+LIFEOS_TOKEN=<the value of life-os's LIFEOS_PICKLIST_TOKEN>
+READ_TOKEN=<openssl rand -hex 32>
+```
+
+Give the same `READ_TOKEN` value to life-os as `FOCUS_READ_TOKEN`. life-os then reads `GET http://focus:3000/api/lifeos/sessions` with it: every study block as rows of `{taskId, title, subject, minutes}` and the block in progress (see focus-dashboard issue 2).

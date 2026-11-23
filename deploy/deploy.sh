@@ -16,6 +16,8 @@ if [ ! -f deploy/.env ]; then
 fi
 
 docker build --tag "focus-dashboard:$tag" --tag focus-dashboard:latest .
+# The network shared with life-os; whichever side deploys first creates it.
+docker network inspect life-os-focus >/dev/null 2>&1 || docker network create life-os-focus
 IMAGE_TAG="$tag" docker compose -f deploy/compose.yml up --detach --wait --wait-timeout 60
 curl -fsS http://127.0.0.1:11120/api/health
 echo

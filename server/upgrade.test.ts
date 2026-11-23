@@ -109,6 +109,23 @@ test("study blocks from before tasks read back unchanged, with task null", async
   ]);
   assert.equal((await call("GET", "/api/settings")).json.dailyGoalMin, 300);
   assert.equal((await call("GET", "/api/running")).json, null);
+  // life-os reads them as rows with no task, under their old names.
+  assert.deepEqual((await call("GET", "/api/lifeos/sessions")).json, {
+    sessions: [
+      {
+        id: 1,
+        date: "2026-10-20",
+        start: "09:00",
+        end: "10:30",
+        rows: [
+          { taskId: null, title: "数学", subject: null, minutes: 50 },
+          { taskId: null, title: "CS341", subject: null, minutes: 20 },
+        ],
+      },
+      { id: 2, date: "2026-10-21", start: "23:30", end: "00:15", rows: [{ taskId: null, title: "未分类", subject: null, minutes: 30 }] },
+    ],
+    inProgress: null,
+  });
   // The upgraded database takes task rows.
   const added = await call("POST", "/api/sessions", {
     date: "2026-11-20", start: "14:00", end: "15:00", courses: [{ task: a2, minutes: 30 }],
